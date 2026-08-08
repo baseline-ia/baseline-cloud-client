@@ -4,30 +4,11 @@ import { createInterface } from 'node:readline'
 import { track, flush } from '../telemetry'
 import { logger } from '../logger'
 
-// Pricing per million tokens — Claude Sonnet 4.6
-const PRICE = {
-  input: 3.0,
-  output: 15.0,
-  cacheRead: 0.30,
-  cacheWrite: 3.75,
-}
-
 export interface TokenUsage {
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
-  costUsd: number
-}
-
-function calcCost(u: Omit<TokenUsage, 'costUsd'>): number {
-  return (
-    (u.inputTokens * PRICE.input +
-      u.outputTokens * PRICE.output +
-      u.cacheReadTokens * PRICE.cacheRead +
-      u.cacheWriteTokens * PRICE.cacheWrite) /
-    1_000_000
-  )
 }
 
 /**
@@ -57,7 +38,7 @@ export async function aggregateSessionTokens(transcriptPath: string): Promise<To
     }
   }
 
-  return { ...acc, costUsd: calcCost(acc) }
+  return acc
 }
 
 export async function sessionTrack(opts: {
@@ -80,16 +61,17 @@ export async function sessionTrack(opts: {
       return
     }
   } else {
-    const raw = {
+    usage = {
       inputTokens: opts.inputTokens ?? 0,
       outputTokens: opts.outputTokens ?? 0,
       cacheReadTokens: opts.cacheReadTokens ?? 0,
       cacheWriteTokens: opts.cacheWriteTokens ?? 0,
     }
-    usage = { ...raw, costUsd: calcCost(raw) }
   }
 
   const project = opts.project ? path.basename(opts.project) : 'default'
+
+  const total = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
 
   track({
     event_type: 'session.tokens',
@@ -100,14 +82,12 @@ export async function sessionTrack(opts: {
       outputTokens: usage.outputTokens,
       cacheReadTokens: usage.cacheReadTokens,
       cacheWriteTokens: usage.cacheWriteTokens,
-      costUsd: Math.round(usage.costUsd * 100_000) / 100_000,
+      totalTokens: total,
     },
   })
 
   await flush()
 
-  const totalTokens = usage.inputTokens + usage.outputTokens
   logger.success(`✓ session.tokens tracked [${project}]`)
-  logger.dim(`  in: ${usage.inputTokens.toLocaleString()}  out: ${usage.outputTokens.toLocaleString()}  cache-r: ${usage.cacheReadTokens.toLocaleString()}  cache-w: ${usage.cacheWriteTokens.toLocaleString()}`)
-  logger.dim(`  total: ${totalTokens.toLocaleString()} tokens  ~$${usage.costUsd.toFixed(4)}`)
+  logger.dim(`  in: ${usage.inputTokens.toLocaleString()}  out: ${usage.outputTokens.toLocaleString()}  cache-r: ${usage.cacheReadTokens.toLocaleString()}  cache-w: ${usage.cacheWriteTokens.toLocaleString()}  total: ${total.toLocaleString()}`)
 }
