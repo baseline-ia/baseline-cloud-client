@@ -18,7 +18,7 @@ const TOOLS = [
   { id: 'kiro',        label: 'Kiro IDE',       dir: '.kiro',           hooksSupported: true  },
   { id: 'kiro-cli',    label: 'Kiro CLI',       binary: 'kiro',         hooksSupported: true  },
   { id: 'antigravity', label: 'Antigravity',    binary: 'antigravity',  hooksSupported: false, note: 'No event hook system available yet' },
-  { id: 'commandcode', label: 'CommandCode',    binary: 'commandcode',  hooksSupported: false, note: 'No event hook system available yet' },
+  { id: 'commandcode', label: 'CommandCode',    binary: 'commandcode',  hooksSupported: true  },
 ] as const
 
 function isInstalled(tool: typeof TOOLS[number]): boolean {
@@ -194,6 +194,49 @@ function setupKiroSteering(): boolean {
   return true
 }
 
+// ---------- CommandCode hook setup ----------
+// CommandCode uses the same hook system as Claude Code:
+// events: PreToolUse, PostToolUse, Stop, SessionStart
+// settings: ~/.commandcode/settings.json
+// stdin payload: {session_id, transcript_path, cwd, hook_event_name, ...}
+// env: COMMANDCODE_PROJECT_DIR, COMMANDCODE_SESSION_ID
+// Note: no UserPromptSubmit equivalent — skill tracking unavailable.
+
+const COMMANDCODE_SETTINGS = join(homedir(), '.commandcode', 'settings.json')
+
+const COMMANDCODE_SESSION_HOOK_COMMAND =
+  'INPUT=$(cat); TRANSCRIPT=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get(\'transcript_path\',\'\'))" 2>/dev/null); SESSION=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get(\'session_id\',\'\'))" 2>/dev/null); [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] && baseline-cloud session track --transcript "$TRANSCRIPT" --session-id "$SESSION" --project "${COMMANDCODE_PROJECT_DIR:-$PWD}" || true'
+
+function setupCommandCodeHooks(): boolean {
+  let settings: any = {}
+  if (existsSync(COMMANDCODE_SETTINGS)) {
+    try {
+      settings = JSON.parse(readFileSync(COMMANDCODE_SETTINGS, 'utf8'))
+    } catch {
+      logger.error('  Could not parse ~/.commandcode/settings.json')
+      return false
+    }
+  }
+
+  settings.hooks ??= {}
+
+  // Stop hook — session token tracking via transcript
+  settings.hooks.Stop ??= []
+  if (!hookExists(settings.hooks.Stop, COMMANDCODE_SESSION_HOOK_COMMAND)) {
+    settings.hooks.Stop.push({
+      hooks: [{ type: 'command', command: COMMANDCODE_SESSION_HOOK_COMMAND }],
+      matcher: '',
+    })
+    logger.success('  ✓ Stop hook added (session token tracking)')
+  } else {
+    logger.dim('  · Stop hook already present')
+  }
+
+  writeFileSync(COMMANDCODE_SETTINGS, JSON.stringify(settings, null, 2) + '\n', 'utf8')
+  logger.dim('  · Skill tracking not available (no UserPromptSubmit equivalent in CommandCode)')
+  return true
+}
+
 // ---------- Main ----------
 
 export async function setup(): Promise<void> {
@@ -224,6 +267,9 @@ export async function setup(): Promise<void> {
         kiroConfigured = true
       } else if ((tool.id === 'kiro' || tool.id === 'kiro-cli') && kiroConfigured) {
         status.configuredHooks = true
+      } else if (tool.id === 'commandcode') {
+        logger.title('CommandCode')
+        status.configuredHooks = setupCommandCodeHooks()
       }
     }
 
