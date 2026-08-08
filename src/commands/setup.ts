@@ -15,8 +15,8 @@ interface ToolStatus {
 const TOOLS = [
   { id: 'claude',      label: 'Claude Code',   binary: 'claude',       hooksSupported: true  },
   { id: 'opencode',    label: 'OpenCode',       binary: 'opencode',     hooksSupported: true  },
-  { id: 'kiro',        label: 'Kiro IDE',       dir: '.kiro',           hooksSupported: false, note: 'VS Code-based — no session hooks available yet' },
-  { id: 'kiro-cli',    label: 'Kiro CLI',       binary: 'kiro',         hooksSupported: false, note: 'No event hook system available yet' },
+  { id: 'kiro',        label: 'Kiro IDE',       dir: '.kiro',           hooksSupported: true  },
+  { id: 'kiro-cli',    label: 'Kiro CLI',       binary: 'kiro',         hooksSupported: true  },
   { id: 'antigravity', label: 'Antigravity',    binary: 'antigravity',  hooksSupported: false, note: 'No event hook system available yet' },
   { id: 'commandcode', label: 'CommandCode',    binary: 'commandcode',  hooksSupported: false, note: 'No event hook system available yet' },
 ] as const
@@ -141,12 +141,66 @@ function setupOpenCodePlugin(): boolean {
   return true
 }
 
+// ---------- Kiro setup ----------
+
+const KIRO_STEERING_DIR = join(homedir(), '.kiro', 'steering')
+const KIRO_STEERING_FILE = join(KIRO_STEERING_DIR, 'baseline-cloud.md')
+const KIRO_PERMISSIONS_FILE = join(homedir(), '.kiro', 'settings', 'permissions.yaml')
+
+const KIRO_STEERING_CONTENT = `## baseline-cloud Telemetry
+
+When the user sends a message that starts with \`/skill-name\` (e.g. \`/sdd-new\`, \`/judgment-day\`, \`/branch-pr\`):
+1. Extract the skill name (everything after \`/\` up to the first space or end of text, excluding any arguments).
+2. Run the following shell command as your FIRST action, before invoking the skill:
+   \`\`\`
+   baseline-cloud skill track --name <skill-name> --project <current-workspace-dir>
+   \`\`\`
+
+For credit/session tracking, run \`baseline-cloud kiro scan\` once at the start of your first turn in a new session.
+`
+
+function setupKiroSteering(): boolean {
+  const steeringDirExists = existsSync(KIRO_STEERING_DIR)
+  if (!steeringDirExists) {
+    logger.warn('  ~/.kiro/steering not found — is Kiro installed?')
+    return false
+  }
+
+  // Write steering file
+  writeFileSync(KIRO_STEERING_FILE, KIRO_STEERING_CONTENT, 'utf8')
+  logger.success('  ✓ Steering file written: ~/.kiro/steering/baseline-cloud.md')
+
+  // Update permissions.yaml — append a shell rule if not already present
+  if (existsSync(KIRO_PERMISSIONS_FILE)) {
+    const existing = readFileSync(KIRO_PERMISSIONS_FILE, 'utf8')
+    if (existing.includes('baseline-cloud')) {
+      logger.dim('  · baseline-cloud shell permission already present')
+    } else {
+      const addition = [
+        '  - capability: shell',
+        '    effect: allow',
+        '    match:',
+        '      - baseline-cloud *',
+        '',
+      ].join('\n')
+      writeFileSync(KIRO_PERMISSIONS_FILE, existing.trimEnd() + '\n' + addition, 'utf8')
+      logger.success('  ✓ Shell permission added for baseline-cloud in ~/.kiro/settings/permissions.yaml')
+    }
+  } else {
+    logger.dim('  · permissions.yaml not found — shell permission not added')
+  }
+
+  logger.dim('  · Run `baseline-cloud kiro scan` to report credit usage from past sessions')
+  return true
+}
+
 // ---------- Main ----------
 
 export async function setup(): Promise<void> {
   logger.title('baseline-cloud setup')
 
   const results: ToolStatus[] = []
+  let kiroConfigured = false
 
   for (const tool of TOOLS) {
     const detected = isInstalled(tool)
@@ -164,6 +218,12 @@ export async function setup(): Promise<void> {
       } else if (tool.id === 'opencode') {
         logger.title('OpenCode')
         status.configuredHooks = setupOpenCodePlugin()
+      } else if ((tool.id === 'kiro' || tool.id === 'kiro-cli') && !kiroConfigured) {
+        logger.title('Kiro')
+        status.configuredHooks = setupKiroSteering()
+        kiroConfigured = true
+      } else if ((tool.id === 'kiro' || tool.id === 'kiro-cli') && kiroConfigured) {
+        status.configuredHooks = true
       }
     }
 

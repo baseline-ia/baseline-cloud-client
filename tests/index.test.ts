@@ -95,11 +95,11 @@ describe('addon > register', () => {
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+/)
   })
 
-  it('registers exactly five subcommands: cloud, openspec, hooks, skill, session', async () => {
+  it('registers exactly six subcommands: cloud, openspec, hooks, skill, session, kiro', async () => {
     const ctx = makePluginContext()
     await register(ctx)
     const names = ctx.registeredCommands.map((c) => c.name()).sort()
-    expect(names).toEqual(['cloud', 'hooks', 'openspec', 'session', 'skill'])
+    expect(names).toEqual(['cloud', 'hooks', 'kiro', 'openspec', 'session', 'skill'])
   })
 
   it('registers at least one telemetry handler', async () => {

@@ -53,6 +53,7 @@ export const EVENT_TYPES = [
   'engram.setup',
   'engram.update',
   'session.tokens',
+  'session.credits',
 ] as const
 
 export type EventType = (typeof EVENT_TYPES)[number]

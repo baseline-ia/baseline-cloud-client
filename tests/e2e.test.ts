@@ -98,7 +98,7 @@ function makePluginContext() {
 }
 
 describe('addon e2e > register() + emit → mock cloud', () => {
-  it('register() wires the cloud, openspec, hooks, and skill subcommands', async () => {
+  it('register() wires the cloud, openspec, hooks, skill, session, and kiro subcommands', async () => {
     const { register } = await import('../src/index')
     const { registeredCommands } = makePluginContext()
 
@@ -117,6 +117,7 @@ describe('addon e2e > register() + emit → mock cloud', () => {
     expect(registeredCommands.map((c) => c.name()).sort()).toEqual([
       'cloud',
       'hooks',
+      'kiro',
       'openspec',
       'session',
       'skill',

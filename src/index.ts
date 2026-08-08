@@ -65,6 +65,7 @@ import { openspecNew, openspecList, openspecClose, openspecSync } from './comman
 import { hooksInstall, hooksUninstall, hooksStatus, hooksFireCommit } from './commands/hooks'
 import { skillTrack } from './commands/skill'
 import { sessionTrack } from './commands/session'
+import { kiroScan } from './commands/kiro'
 import { Command } from 'commander'
 
 /**
@@ -325,6 +326,25 @@ export function buildSessionCommand(): Command {
 }
 
 /**
+ * Build the `kiro` commander subcommand tree.
+ */
+export function buildKiroCommand(): Command {
+  const kiro = new Command('kiro').description(
+    'Kiro IDE integration — scan sessions and track credit usage'
+  )
+
+  kiro
+    .command('scan')
+    .description('Scan ~/.kiro/sessions for new credit usage and report to baseline-cloud')
+    .option('--dry-run', 'Show what would be tracked without sending')
+    .action(async (opts: { dryRun?: boolean }) => {
+      await kiroScan({ dryRun: opts.dryRun })
+    })
+
+  return kiro
+}
+
+/**
  * The default export is the loader's contract. The host CLI does
  * `const addon = (await import('@amsintegra/baseline-cloud-client')).default`
  * and calls it with a plugin context.
@@ -384,6 +404,13 @@ export default async function registerImpl(ctx: PluginContext): Promise<AddonMan
     ctx.registerCommand(buildSessionCommand())
   } catch (err) {
     logRegistrationError('session', err)
+  }
+
+  // Kiro session scan subcommand
+  try {
+    ctx.registerCommand(buildKiroCommand())
+  } catch (err) {
+    logRegistrationError('kiro', err)
   }
 
   // Telemetry forwarder. Every event the host CLI emits (cli.install,
@@ -488,6 +515,8 @@ export {
   hooksFireCommit,
   // skill tracking
   skillTrack,
+  // kiro integration
+  kiroScan,
   // test helpers
   _telemetryReset,
 }
