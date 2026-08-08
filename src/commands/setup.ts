@@ -17,7 +17,6 @@ const TOOLS = [
   { id: 'opencode',    label: 'OpenCode',       binary: 'opencode',     hooksSupported: true  },
   { id: 'kiro',        label: 'Kiro IDE',       dir: '.kiro',           hooksSupported: true  },
   { id: 'kiro-cli',    label: 'Kiro CLI',       binary: 'kiro',         hooksSupported: true  },
-  { id: 'antigravity', label: 'Antigravity',    binary: 'antigravity',  hooksSupported: false, note: 'No event hook system available yet' },
   { id: 'commandcode', label: 'CommandCode',    binary: 'commandcode',  hooksSupported: true  },
 ] as const
 
