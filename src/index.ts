@@ -64,6 +64,7 @@ import { statusCloud } from './commands/status-cloud'
 import { openspecNew, openspecList, openspecClose, openspecSync } from './commands/openspec'
 import { hooksInstall, hooksUninstall, hooksStatus, hooksFireCommit } from './commands/hooks'
 import { skillTrack } from './commands/skill'
+import { sessionTrack } from './commands/session'
 import { Command } from 'commander'
 
 /**
@@ -291,6 +292,39 @@ export function buildSkillCommand(): Command {
 }
 
 /**
+ * Build the `session` commander subcommand tree.
+ */
+export function buildSessionCommand(): Command {
+  const session = new Command('session').description(
+    'Track session-level token usage and cost'
+  )
+
+  session
+    .command('track')
+    .description('(Internal) Aggregate token usage from a session transcript and fire session.tokens')
+    .option('--transcript <path>', 'Path to the Claude Code session JSONL file')
+    .option('--session-id <id>', 'Session ID')
+    .option('--project <path>', 'Project directory path (defaults to cwd)')
+    .option('--input-tokens <n>', 'Input tokens (if not using --transcript)')
+    .option('--output-tokens <n>', 'Output tokens (if not using --transcript)')
+    .option('--cache-read-tokens <n>', 'Cache read tokens')
+    .option('--cache-write-tokens <n>', 'Cache write tokens')
+    .action(async (opts: any) => {
+      await sessionTrack({
+        transcriptPath: opts.transcript,
+        sessionId: opts.sessionId,
+        project: opts.project ?? process.cwd(),
+        inputTokens: opts.inputTokens !== undefined ? Number(opts.inputTokens) : undefined,
+        outputTokens: opts.outputTokens !== undefined ? Number(opts.outputTokens) : undefined,
+        cacheReadTokens: opts.cacheReadTokens !== undefined ? Number(opts.cacheReadTokens) : undefined,
+        cacheWriteTokens: opts.cacheWriteTokens !== undefined ? Number(opts.cacheWriteTokens) : undefined,
+      })
+    })
+
+  return session
+}
+
+/**
  * The default export is the loader's contract. The host CLI does
  * `const addon = (await import('@amsintegra/baseline-cloud-client')).default`
  * and calls it with a plugin context.
@@ -343,6 +377,13 @@ export default async function registerImpl(ctx: PluginContext): Promise<AddonMan
     ctx.registerCommand(buildSkillCommand())
   } catch (err) {
     logRegistrationError('skill', err)
+  }
+
+  // Session token tracking subcommand
+  try {
+    ctx.registerCommand(buildSessionCommand())
+  } catch (err) {
+    logRegistrationError('session', err)
   }
 
   // Telemetry forwarder. Every event the host CLI emits (cli.install,
