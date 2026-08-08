@@ -98,7 +98,7 @@ function makePluginContext() {
 }
 
 describe('addon e2e > register() + emit → mock cloud', () => {
-  it('register() wires the cloud, openspec, and hooks subcommands', async () => {
+  it('register() wires the cloud, openspec, hooks, and skill subcommands', async () => {
     const { register } = await import('../src/index')
     const { registeredCommands } = makePluginContext()
 
@@ -118,6 +118,7 @@ describe('addon e2e > register() + emit → mock cloud', () => {
       'cloud',
       'hooks',
       'openspec',
+      'skill',
     ])
   })
 

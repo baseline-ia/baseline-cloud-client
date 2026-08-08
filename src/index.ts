@@ -63,6 +63,7 @@ import { logout } from './commands/logout'
 import { statusCloud } from './commands/status-cloud'
 import { openspecNew, openspecList, openspecClose, openspecSync } from './commands/openspec'
 import { hooksInstall, hooksUninstall, hooksStatus, hooksFireCommit } from './commands/hooks'
+import { skillTrack } from './commands/skill'
 import { Command } from 'commander'
 
 /**
@@ -265,6 +266,31 @@ export function buildHooksCommand(): Command {
 }
 
 /**
+ * Build the `skill` commander subcommand tree.
+ */
+export function buildSkillCommand(): Command {
+  const skill = new Command('skill').description(
+    'Track skill usage events for dashboard analytics'
+  )
+
+  skill
+    .command('track')
+    .description('(Internal) Fire a skill.used event — called by the Claude Code hook')
+    .requiredOption('--name <name>', 'Skill name (e.g. sdd-new, sdd-apply)')
+    .option('--project <path>', 'Project directory path (defaults to cwd)')
+    .option('--duration-ms <ms>', 'Time the skill took to respond (ms)')
+    .action((opts: { name: string; project?: string; durationMs?: string }) => {
+      skillTrack({
+        name: opts.name,
+        project: opts.project ?? process.cwd(),
+        durationMs: opts.durationMs !== undefined ? Number(opts.durationMs) : undefined,
+      })
+    })
+
+  return skill
+}
+
+/**
  * The default export is the loader's contract. The host CLI does
  * `const addon = (await import('@amsintegra/baseline-cloud-client')).default`
  * and calls it with a plugin context.
@@ -310,6 +336,13 @@ export default async function registerImpl(ctx: PluginContext): Promise<AddonMan
     ctx.registerCommand(buildHooksCommand())
   } catch (err) {
     logRegistrationError('hooks', err)
+  }
+
+  // Skill tracking subcommand
+  try {
+    ctx.registerCommand(buildSkillCommand())
+  } catch (err) {
+    logRegistrationError('skill', err)
   }
 
   // Telemetry forwarder. Every event the host CLI emits (cli.install,
@@ -412,6 +445,8 @@ export {
   hooksUninstall,
   hooksStatus,
   hooksFireCommit,
+  // skill tracking
+  skillTrack,
   // test helpers
   _telemetryReset,
 }
