@@ -27,6 +27,7 @@
   "files": [
     "dist",
     "hooks",
+    "opencode-plugin.cjs",
     "README.md"
   ],
   "preferGlobal": true,

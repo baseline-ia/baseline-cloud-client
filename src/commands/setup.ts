@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { logger } from '../logger'
@@ -14,7 +14,7 @@ interface ToolStatus {
 
 const TOOLS = [
   { id: 'claude',      label: 'Claude Code',   binary: 'claude',       hooksSupported: true  },
-  { id: 'opencode',    label: 'OpenCode',       binary: 'opencode',     hooksSupported: false, note: 'No event hook system available yet' },
+  { id: 'opencode',    label: 'OpenCode',       binary: 'opencode',     hooksSupported: true  },
   { id: 'kiro',        label: 'Kiro IDE',       dir: '.kiro',           hooksSupported: false, note: 'VS Code-based — no session hooks available yet' },
   { id: 'kiro-cli',    label: 'Kiro CLI',       binary: 'kiro',         hooksSupported: false, note: 'No event hook system available yet' },
   { id: 'antigravity', label: 'Antigravity',    binary: 'antigravity',  hooksSupported: false, note: 'No event hook system available yet' },
@@ -96,6 +96,51 @@ function setupClaudeCodeHooks(): boolean {
   return true
 }
 
+// ---------- OpenCode plugin setup ----------
+
+const PLUGIN_SRC = join(__dirname, '..', 'opencode-plugin.cjs')
+const OPENCODE_PLUGIN_DIR = join(homedir(), '.opencode', 'plugins', 'baseline-cloud')
+const OPENCODE_PLUGIN_DEST = join(OPENCODE_PLUGIN_DIR, 'index.cjs')
+const OPENCODE_CONFIG = join(homedir(), '.opencode', 'config.json')
+
+function setupOpenCodePlugin(): boolean {
+  if (!existsSync(PLUGIN_SRC)) {
+    logger.warn('  Could not find OpenCode plugin source — try reinstalling baseline-cloud-client')
+    return false
+  }
+
+  mkdirSync(OPENCODE_PLUGIN_DIR, { recursive: true })
+  copyFileSync(PLUGIN_SRC, OPENCODE_PLUGIN_DEST)
+  logger.success('  ✓ Plugin installed at ~/.opencode/plugins/baseline-cloud/index.cjs')
+
+  let config: any = {}
+  if (existsSync(OPENCODE_CONFIG)) {
+    try {
+      config = JSON.parse(readFileSync(OPENCODE_CONFIG, 'utf8'))
+    } catch {
+      logger.error('  Could not parse ~/.opencode/config.json')
+      return false
+    }
+  }
+
+  config.plugin ??= []
+  const pluginEntry: [string, Record<string, unknown>] = [OPENCODE_PLUGIN_DEST, {}]
+
+  const alreadyRegistered = config.plugin.some(
+    (p: unknown) => p === OPENCODE_PLUGIN_DEST || (Array.isArray(p) && p[0] === OPENCODE_PLUGIN_DEST)
+  )
+
+  if (!alreadyRegistered) {
+    config.plugin.push(pluginEntry)
+    writeFileSync(OPENCODE_CONFIG, JSON.stringify(config, null, 2) + '\n', 'utf8')
+    logger.success('  ✓ Plugin registered in ~/.opencode/config.json')
+  } else {
+    logger.dim('  · Plugin already registered in ~/.opencode/config.json')
+  }
+
+  return true
+}
+
 // ---------- Main ----------
 
 export async function setup(): Promise<void> {
@@ -112,9 +157,14 @@ export async function setup(): Promise<void> {
       note: 'note' in tool ? tool.note : undefined,
     }
 
-    if (detected && tool.hooksSupported && tool.id === 'claude') {
-      logger.title('Claude Code')
-      status.configuredHooks = setupClaudeCodeHooks()
+    if (detected && tool.hooksSupported) {
+      if (tool.id === 'claude') {
+        logger.title('Claude Code')
+        status.configuredHooks = setupClaudeCodeHooks()
+      } else if (tool.id === 'opencode') {
+        logger.title('OpenCode')
+        status.configuredHooks = setupOpenCodePlugin()
+      }
     }
 
     results.push(status)
