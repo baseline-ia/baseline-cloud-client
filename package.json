@@ -1,0 +1,46 @@
+{
+  "name": "@amsintegra/baseline-cloud-client",
+  "version": "0.1.0",
+  "description": "Optional addon — connects any CLI to a self-hosted baseline-cloud instance for telemetry, openspec lifecycle tracking, and post-commit git hooks.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs --dts --sourcemap=inline --outDir dist --clean",
+    "dev": "tsx src/index.ts",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist",
+    "hooks",
+    "README.md"
+  ],
+  "dependencies": {
+    "chalk": "4.1.2",
+    "commander": "^12.1.0",
+    "fs-extra": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^1.6.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
