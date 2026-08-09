@@ -5,12 +5,11 @@
  *
  * Interactive flow:
  *   1. Prompt for server URL (default: http://localhost:3000)
- *   2. Prompt for username + password (with hidden input for the password)
- *   3. POST /api/v1/auth/login
- *   4. If 401 with reason=not_found, POST /api/v1/auth/signup to register
- *   5. Save the returned token to ~/.baseline/cloud.json (mode 0600)
- *   6. Fire `cli.login` event
- *   7. Offer to install the post-commit hook (only inside a git repo
+ *   2. Choose username/password or an existing API token
+ *   3. Authenticate with the selected method
+ *   4. Save the token to ~/.baseline/cloud.json (mode 0600)
+ *   5. Fire `cli.login` event
+ *   6. Offer to install the post-commit hook (only inside a git repo
  *      and only if not already installed)
  *
  * Non-interactive (CI):
@@ -24,7 +23,7 @@
 import { createInterface } from 'node:readline/promises'
 import { stdin, stdout, exit } from 'node:process'
 import { logger } from '../logger'
-import { saveConfig } from '../auth'
+import { saveConfig, tokenPrefix } from '../auth'
 import { postJson } from '../api'
 import { track, flush, envContext, detectTools, registerExitFlush } from '../telemetry'
 import { isInsideGitRepo, installHook, isHookInstalled } from '../git-hooks'
@@ -50,8 +49,113 @@ interface LoginListResponse {
   error?: string
 }
 
+interface TokenResponse {
+  token?: LoginResponse['token']
+  token_issue?: string
+}
+
 async function readRl() {
   return createInterface({ input: stdin, output: stdout })
+}
+
+interface SecretInput extends NodeJS.ReadableStream {
+  isTTY?: boolean
+  isRaw?: boolean
+  setRawMode?: (mode: boolean) => SecretInput
+}
+
+interface SecretOutput {
+  isTTY?: boolean
+  write: (chunk: string) => boolean
+}
+
+/** Read a secret without echoing it when both streams are interactive TTYs. */
+export function readSecret(
+  prompt: string,
+  rl: Awaited<ReturnType<typeof readRl>>,
+  input: SecretInput = stdin,
+  output: SecretOutput = stdout
+): Promise<string> {
+  if (!input.isTTY || !output.isTTY || !input.setRawMode) {
+    return rl.question(prompt)
+  }
+
+  return new Promise((resolve, reject) => {
+    let value = ''
+    const wasRaw = input.isRaw ?? false
+    let cleanedUp = false
+
+    const cleanup = () => {
+      if (cleanedUp) return
+      cleanedUp = true
+      input.off('data', onData)
+      input.off('error', onError)
+      try {
+        input.setRawMode?.(wasRaw)
+      } catch {
+        // The terminal may already be unavailable while handling an error.
+      }
+      try {
+        input.resume?.()
+      } catch {
+        // Cleanup must not mask the original input error.
+      }
+    }
+
+    const finish = (error?: Error) => {
+      cleanup()
+      output.write('\n')
+      if (error) reject(error)
+      else resolve(value)
+    }
+
+    const onData = (chunk: Buffer | string) => {
+      for (const character of chunk.toString()) {
+        if (character === '\u0003') {
+          finish(new Error('Input cancelled'))
+          return
+        }
+        if (character === '\u0004') {
+          finish(new Error('Input ended'))
+          return
+        }
+        if (character === '\r' || character === '\n') {
+          finish()
+          return
+        }
+        if (character === '\u007f' || character === '\b') {
+          value = value.slice(0, -1)
+          continue
+        }
+        if (character === '\u0015') {
+          value = ''
+          continue
+        }
+        value += character
+      }
+    }
+
+    const onError = (error: Error) => finish(error)
+
+    output.write(prompt)
+    input.on('data', onData)
+    input.once('error', onError)
+    try {
+      input.setRawMode?.(true)
+      input.resume?.()
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)))
+    }
+  })
+}
+
+function validServerUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 export interface LoginOpts {
@@ -80,7 +184,7 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
     saveConfig({ server_url: serverUrl, token: opts.token })
     logger.success(`✓ Token saved`)
     logger.info(`  Server: ${serverUrl}`)
-    logger.info(`  Token prefix: ${opts.token.split('.')[0]}`)
+    logger.info(`  Token prefix: ${tokenPrefix(opts.token)}`)
     logger.info(`  Config saved to ~/.baseline/cloud.json`)
     track({ event_type: 'cli.login', project: 'default', payload: { serverUrl, via: 'token' } })
     await flush()
@@ -102,14 +206,43 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
   } else {
     const rl = await readRl()
     try {
+      if (!username && !password) {
+        let method = ''
+        while (method !== 'a' && method !== 'b') {
+          method = (await rl.question('Authentication method: (a) username/password or (b) API token: '))
+            .trim()
+            .toLowerCase()
+          if (method !== 'a' && method !== 'b') {
+            logger.warn('Choose a or b.')
+          }
+        }
+
+        if (method === 'b') {
+          const def = serverUrl ?? 'http://localhost:3000'
+          const ans = (await rl.question(`Server URL [${def}]: `)).trim()
+          serverUrl = (ans || def).replace(/\/+$/, '')
+          const token = (await readSecret('Existing API token: ', rl)).trim()
+          if (!serverUrl || !validServerUrl(serverUrl) || !token) {
+            logger.error('A valid server URL and a non-empty API token are required.')
+            exit(1)
+          }
+          saveConfig({ server_url: serverUrl, token })
+          logger.success('✓ Token saved')
+          logger.info(`  Server: ${serverUrl}`)
+          logger.info(`  Token prefix: ${tokenPrefix(token)}`)
+          logger.info('  Config saved to ~/.baseline/cloud.json')
+          track({ event_type: 'cli.login', project: 'default', payload: { serverUrl, via: 'token' } })
+          await flush()
+          return
+        }
+      }
+
       const def = serverUrl ?? 'http://localhost:3000'
       const ans = (await rl.question(`Server URL [${def}]: `)).trim()
       serverUrl = (ans || def).replace(/\/+$/, '')
       if (!username || !password) {
-        const u = (await rl.question('Username: ')).trim()
-        const p = (await rl.question('Password: ')).trim()
-        username = u
-        password = p
+        username = (await rl.question('Username: ')).trim()
+        password = (await readSecret('Password: ', rl)).trim()
       }
     } finally {
       rl.close()
@@ -125,6 +258,7 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
   let raw: string | null = null
   let user: LoginResponse['user'] | null = null
   let warning: string | undefined
+  let tokenIssue: string | undefined
 
   const loginRes = await postJson<LoginListResponse>(`${serverUrl}/api/v1/auth/login`, {
     username,
@@ -133,10 +267,19 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
   if (loginRes.status === 200) {
     const body = loginRes.json as LoginListResponse
     user = body.user
-    // Note: a successful login does not return a fresh token — the
-    // server expects the user to either already have a token or to
-    // ask an admin to issue one. We surface this clearly below.
-    raw = null
+    try {
+      const tokenRes = await postJson<TokenResponse>(`${serverUrl}/api/v1/auth/token`, {
+        name: username,
+        password,
+      })
+      tokenIssue = tokenRes.json?.token_issue
+      if (tokenRes.status >= 200 && tokenRes.status < 300) {
+        raw = tokenRes.json?.token?.raw ?? null
+      }
+    } catch {
+      // Preserve the successful credential login result, but do not claim
+      // success with a saved token when issuance was unreachable.
+    }
   } else if (loginRes.status === 401) {
     const body401 = loginRes.json as { reason?: string } | null
     if (body401?.reason !== 'not_found') {
@@ -170,7 +313,10 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
 
   if (!raw) {
     const loginBody = loginRes.json as LoginListResponse | null
-    const hint = loginBody?.token_issue ?? 'Ask your admin to issue a token from Dashboard → Admin → Tokens'
+    const hint =
+      tokenIssue ??
+      loginBody?.token_issue ??
+      'Ask your admin to issue a token from Dashboard → Admin → Tokens'
     logger.warn(`✓ Logged in as ${user.username}, but no bearer token is available.`)
     logger.warn(hint)
     logger.warn('Then run: baseline-cloud cloud login --server <url> --token <raw-token>')
@@ -180,7 +326,7 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
   saveConfig({ server_url: serverUrl, token: raw })
   logger.success(`✓ Logged in as ${user.username} (${user.role})`)
   logger.info(`  Server: ${serverUrl}`)
-  logger.info(`  Token prefix: ${raw.split('.')[0]}`)
+  logger.info(`  Token prefix: ${tokenPrefix(raw)}`)
   logger.info(`  Config saved to ~/.baseline/cloud.json`)
   if (warning) logger.warn(warning)
 

@@ -48,6 +48,8 @@ Authenticate interactively:
 baseline-cloud cloud login
 ```
 
+The interactive command asks whether to use username/password or an existing API token. The token option prompts for the server URL and token, then stores the credentials with owner-only file permissions.
+
 Use an existing bearer token instead of username and password:
 
 ```bash
