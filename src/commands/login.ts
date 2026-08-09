@@ -6,8 +6,8 @@
  * Interactive flow:
  *   1. Prompt for server URL (default: http://localhost:3000)
  *   2. Prompt for username + password (with hidden input for the password)
- *   3. POST /v1/auth/login
- *   4. If 401 (no such user), POST /v1/auth/signup to register
+ *   3. POST /api/v1/auth/login
+ *   4. If 401 with reason=not_found, POST /api/v1/auth/signup to register
  *   5. Save the returned token to ~/.baseline/cloud.json (mode 0600)
  *   6. Fire `cli.login` event
  *   7. Offer to install the post-commit hook (only inside a git repo
@@ -138,7 +138,13 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
     // ask an admin to issue one. We surface this clearly below.
     raw = null
   } else if (loginRes.status === 401) {
-    // No such user — try to sign them up.
+    const body401 = loginRes.json as { reason?: string } | null
+    if (body401?.reason !== 'not_found') {
+      // User exists but password is wrong (or account disabled).
+      logger.error('Invalid username or password.')
+      exit(1)
+    }
+    // User does not exist — auto-register.
     const signupRes = await postJson<LoginResponse>(`${serverUrl}/api/v1/auth/signup`, {
       username,
       password,
@@ -163,10 +169,11 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
   }
 
   if (!raw) {
-    logger.warn(`✓ Logged in as ${user.username}, but the server did not return a fresh token.`)
-    logger.warn('To use the CLI, ask your admin to issue a token from the dashboard:')
-    logger.warn('  Dashboard → Admin → Tokens → Issue → copy the raw token')
-    logger.warn('Then run: baseline login --token <raw-token> --server <url>')
+    const loginBody = loginRes.json as LoginListResponse | null
+    const hint = loginBody?.token_issue ?? 'Ask your admin to issue a token from Dashboard → Admin → Tokens'
+    logger.warn(`✓ Logged in as ${user.username}, but no bearer token is available.`)
+    logger.warn(hint)
+    logger.warn('Then run: baseline cloud login --server <url> --token <raw-token>')
     exit(0)
   }
 
