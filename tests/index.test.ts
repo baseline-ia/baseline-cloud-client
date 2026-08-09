@@ -4,6 +4,8 @@ import {
   buildCloudCommand,
   buildOpenspecCommand,
   buildHooksCommand,
+  buildSddCommand,
+  buildTelemetryCommand,
   register,
   type PluginContext,
   type TelemetryEventLike,
@@ -83,6 +85,22 @@ describe('addon > buildHooksCommand', () => {
   })
 })
 
+describe('addon > buildSddCommand', () => {
+  it('builds phase start and complete subcommands', () => {
+    const cmd = buildSddCommand()
+    expect(cmd.name()).toBe('sdd')
+    const phase = cmd.commands.find((c) => c.name() === 'phase')!
+    expect(phase.commands.map((c) => c.name()).sort()).toEqual(['complete', 'run', 'start'])
+  })
+})
+
+describe('addon > buildTelemetryCommand', () => {
+  it('registers telemetry sync', () => {
+    const cmd = buildTelemetryCommand()
+    expect(cmd.commands.map((c) => c.name())).toEqual(['sync'])
+  })
+})
+
 describe('addon > register', () => {
   beforeEach(() => {
     capturedTelemetryHandlers = []
@@ -95,11 +113,11 @@ describe('addon > register', () => {
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+/)
   })
 
-  it('registers exactly six subcommands: cloud, openspec, hooks, skill, session, kiro', async () => {
+  it('registers eight subcommands including SDD timing and telemetry recovery', async () => {
     const ctx = makePluginContext()
     await register(ctx)
     const names = ctx.registeredCommands.map((c) => c.name()).sort()
-    expect(names).toEqual(['cloud', 'hooks', 'kiro', 'openspec', 'session', 'skill'])
+    expect(names).toEqual(['cloud', 'hooks', 'kiro', 'openspec', 'sdd', 'session', 'skill', 'telemetry'])
   })
 
   it('registers at least one telemetry handler', async () => {

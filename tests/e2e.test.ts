@@ -119,8 +119,10 @@ describe('addon e2e > register() + emit → mock cloud', () => {
       'hooks',
       'kiro',
       'openspec',
+      'sdd',
       'session',
       'skill',
+      'telemetry',
     ])
   })
 

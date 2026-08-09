@@ -46,6 +46,7 @@ import {
   envContext,
   detectTools,
   registerExitFlush,
+  deliverEvents,
   _resetForTests as _telemetryReset,
 } from './telemetry'
 import type { EventType, WorkType, EventPayload } from './telemetry'
@@ -65,6 +66,7 @@ import { openspecNew, openspecList, openspecClose, openspecSync } from './comman
 import { hooksInstall, hooksUninstall, hooksStatus, hooksFireCommit } from './commands/hooks'
 import { skillTrack } from './commands/skill'
 import { sessionTrack } from './commands/session'
+import { sddPhaseStart, sddPhaseComplete, sddPhaseRun, syncSddPhaseEvents } from './commands/sdd-phase'
 import { kiroScan } from './commands/kiro'
 import { Command } from 'commander'
 
@@ -180,6 +182,19 @@ export function buildCloudCommand(): Command {
     })
 
   return cloud
+}
+
+/** Build the durable telemetry recovery command tree. */
+export function buildTelemetryCommand(): Command {
+  const telemetry = new Command('telemetry').description('Manage durable telemetry delivery')
+  telemetry
+    .command('sync')
+    .description('Replay pending SDD events after login')
+    .action(async () => {
+      const delivered = await syncSddPhaseEvents()
+      logger.success(`✓ Replayed ${delivered} pending SDD event${delivered === 1 ? '' : 's'}.`)
+    })
+  return telemetry
 }
 
 /**
@@ -327,6 +342,46 @@ export function buildSessionCommand(): Command {
   return session
 }
 
+/** Build the explicit SDD phase timing command tree. */
+export function buildSddCommand(): Command {
+  const sdd = new Command('sdd').description('Track SDD phase timing')
+  const phase = sdd.command('phase').description('Track the start and completion of an SDD phase')
+
+  phase
+    .command('start')
+    .description('Start timing an SDD phase')
+    .requiredOption('--phase <phase>', 'SDD phase: explore|propose|spec|design|tasks|apply|verify|archive')
+    .requiredOption('--change <change>', 'Change identifier')
+    .option('--project <path-or-name>', 'Project path or stable project name (defaults to cwd)')
+    .action(async (opts: { phase: string; change: string; project?: string }) => {
+      await sddPhaseStart(opts)
+    })
+
+  phase
+    .command('complete')
+    .description('Complete timing an SDD phase')
+    .requiredOption('--phase <phase>', 'SDD phase: explore|propose|spec|design|tasks|apply|verify|archive')
+    .requiredOption('--change <change>', 'Change identifier')
+    .option('--project <path-or-name>', 'Project path or stable project name (defaults to cwd)')
+    .action(async (opts: { phase: string; change: string; project?: string }) => {
+      await sddPhaseComplete(opts)
+    })
+
+  phase
+    .command('run <command> [args...]')
+    .description('Run a command while timing an SDD phase')
+    .requiredOption('--phase <phase>', 'SDD phase: explore|propose|spec|design|tasks|apply|verify|archive')
+    .requiredOption('--change <change>', 'Change identifier')
+    .option('--project <path-or-name>', 'Project path or stable project name (defaults to cwd)')
+    .allowUnknownOption()
+    .action(async (command: string, args: string[], opts: { phase: string; change: string; project?: string }) => {
+      const exitCode = await sddPhaseRun({ ...opts, command, args })
+      if (exitCode !== 0) process.exitCode = exitCode
+    })
+
+  return sdd
+}
+
 /**
  * Build the `kiro` commander subcommand tree.
  */
@@ -415,6 +470,20 @@ export default async function registerImpl(ctx: PluginContext): Promise<AddonMan
     logRegistrationError('kiro', err)
   }
 
+  // Explicit SDD phase timing subcommand
+  try {
+    ctx.registerCommand(buildSddCommand())
+  } catch (err) {
+    logRegistrationError('sdd', err)
+  }
+
+  // Durable telemetry recovery subcommand
+  try {
+    ctx.registerCommand(buildTelemetryCommand())
+  } catch (err) {
+    logRegistrationError('telemetry', err)
+  }
+
   // Telemetry forwarder. Every event the host CLI emits (cli.install,
   // cli.update, etc.) is forwarded to the cloud via the addon's own
   // track function. The host's `emitTelemetry` is the upstream
@@ -491,6 +560,7 @@ export {
   envContext,
   detectTools,
   registerExitFlush,
+  deliverEvents,
   // openspec-tracker
   syncOpenspecChanges,
   readProposalFrontmatter,
@@ -517,6 +587,11 @@ export {
   hooksFireCommit,
   // skill tracking
   skillTrack,
+  // SDD phase timing
+  sddPhaseStart,
+  sddPhaseComplete,
+  sddPhaseRun,
+  syncSddPhaseEvents,
   // kiro integration
   kiroScan,
   // test helpers

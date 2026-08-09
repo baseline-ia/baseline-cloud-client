@@ -54,6 +54,8 @@ export const EVENT_TYPES = [
   'engram.update',
   'session.tokens',
   'session.credits',
+  'sdd.phase.started',
+  'sdd.phase.completed',
 ] as const
 
 export type EventType = (typeof EVENT_TYPES)[number]
@@ -126,6 +128,34 @@ export interface EventPayload {
   occurred_at?: string
 }
 
+/** Deliver a supplied batch and report whether the server confirmed it. */
+export async function deliverEvents(events: EventPayload[]): Promise<boolean> {
+  if (events.length === 0 || !isEnabled()) return false
+  const cfg: CloudConfig | null = loadConfig()
+  if (!cfg) return false
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    const res = await fetch(`${cfg.server_url}/api/v1/events/batch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${cfg.token}`,
+        'User-Agent': `baseline-cli/${getCliVersion()}`,
+      },
+      body: JSON.stringify({ events }),
+      signal: controller.signal,
+    })
+    if (!res.ok && (res.status === 401 || res.status === 403)) setEnabled(false)
+    return res.ok
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // ---------- Batching + flush ----------
 
 const BATCH_MAX = 20
@@ -177,8 +207,8 @@ export function setEnabled(enabled: boolean): void {
  *
  * If telemetry is disabled, this is a no-op.
  */
-export function track(event: EventPayload): void {
-  if (!isEnabled()) return
+export function track(event: EventPayload): boolean {
+  if (!isEnabled()) return false
   _queue.push({ ...event, occurred_at: event.occurred_at ?? new Date().toISOString() })
   if (_queue.length >= BATCH_MAX) {
     void flush()
@@ -187,6 +217,7 @@ export function track(event: EventPayload): void {
     // Don't keep the process alive just for telemetry.
     _flushTimer.unref?.()
   }
+  return true
 }
 
 /**
@@ -213,28 +244,7 @@ export async function flush(): Promise<void> {
     const events = _queue
     _queue = []
 
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-    try {
-      const res = await fetch(`${cfg.server_url}/api/v1/events/batch`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${cfg.token}`,
-          'User-Agent': `baseline-cli/${getCliVersion()}`,
-        },
-        body: JSON.stringify({ events }),
-        signal: controller.signal,
-      })
-      if (!res.ok && (res.status === 401 || res.status === 403)) {
-        // Drop on auth failure; let the user fix it.
-        setEnabled(false)
-      }
-    } catch {
-      // Network failure — drop the events silently.
-    } finally {
-      clearTimeout(timer)
-    }
+      await deliverEvents(events)
   } finally {
     _flushing = false
   }

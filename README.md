@@ -89,6 +89,25 @@ BASELINE_TELEMETRY=0 baseline-cloud cloud status
 
 Host applications can also disable telemetry with their own `--no-telemetry` option when supported. Disabling telemetry clears queued events and prevents new events from being sent.
 
+## SDD Phase Timing
+
+Record actual elapsed time for each SDD phase with the explicit commands below:
+
+```bash
+baseline-cloud sdd phase start --phase design --change add-feature [--project /path/to/project]
+baseline-cloud sdd phase complete --phase design --change add-feature [--project /path/to/project]
+baseline-cloud sdd phase run --phase design --change add-feature [--project /path/to/project] -- npm run build
+baseline-cloud telemetry sync
+```
+
+Supported phases are `explore`, `propose`, `spec`, `design`, `tasks`, `apply`, `verify`, and `archive`. Start state is stored in `~/.baseline/sdd-phase-state.json` with owner-only permissions. Completion emits the measured `durationSeconds` and removes the matching state only after the event receives a confirmed 2xx response.
+
+`phase run` starts timing, runs the command with inherited stdio, records `completed` or `failed`, and returns the child exit code. A signal or non-zero child exit still records a failed completion. If the wrapper process itself is interrupted, the active phase is retained and no completion is invented.
+
+Start and completion events are written to the durable state file before network delivery. Logout removes only credentials; it does not remove timing state. Missing credentials, disabled telemetry, network errors, and 401/403/5xx responses leave pending events in place. After logging in, run `baseline-cloud telemetry sync`; only confirmed 2xx deliveries are removed, so repeating the command is safe. The wrapper does not launch another `baseline-cloud` process, so uninstalling the global CLI while it is already running does not prevent its in-memory completion path or later recovery.
+
+An SDD orchestrator using separate commands must invoke `start` immediately before each phase begins and `complete` immediately after it ends. The CLI does not infer phase boundaries from `sdd init`, filesystem changes, or skill events.
+
 ## OpenCode Plugin
 
 Run `baseline-cloud setup` with OpenCode installed to copy and register the bundled plugin automatically. The plugin tracks skill invocations and session token usage through the `baseline-cloud` CLI.
