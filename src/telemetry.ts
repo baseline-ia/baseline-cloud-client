@@ -216,7 +216,7 @@ export async function flush(): Promise<void> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     try {
-      const res = await fetch(`${cfg.server_url}/v1/events/batch`, {
+      const res = await fetch(`${cfg.server_url}/api/v1/events/batch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -314,7 +314,7 @@ export function registerExitFlush(): void {
     const cfg = loadConfig()
     if (!cfg || _queue.length === 0) return
     try {
-      fetch(`${cfg.server_url}/v1/events/batch`, {
+      fetch(`${cfg.server_url}/api/v1/events/batch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

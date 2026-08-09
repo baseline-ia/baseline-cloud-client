@@ -107,7 +107,7 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
   let user: LoginResponse['user'] | null = null
   let warning: string | undefined
 
-  const loginRes = await postJson<LoginListResponse>(`${serverUrl}/v1/auth/login`, {
+  const loginRes = await postJson<LoginListResponse>(`${serverUrl}/api/v1/auth/login`, {
     username,
     password,
   })
@@ -120,7 +120,7 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
     raw = null
   } else if (loginRes.status === 401) {
     // No such user — try to sign them up.
-    const signupRes = await postJson<LoginResponse>(`${serverUrl}/v1/auth/signup`, {
+    const signupRes = await postJson<LoginResponse>(`${serverUrl}/api/v1/auth/signup`, {
       username,
       password,
     })
