@@ -1,5 +1,5 @@
 /**
- * Cloud addon command: `baseline login`.
+ * Cloud addon command: `baseline-cloud cloud login`.
  *
  * Authenticate against a self-hosted baseline-cloud instance.
  *
@@ -14,10 +14,10 @@
  *      and only if not already installed)
  *
  * Non-interactive (CI):
- *   BASELINE_CLOUD_URL=... BASELINE_CLOUD_USERNAME=... BASELINE_CLOUD_PASSWORD=... baseline login --no-input
+ *   BASELINE_CLOUD_URL=... BASELINE_CLOUD_USERNAME=... BASELINE_CLOUD_PASSWORD=... baseline-cloud cloud login --no-input
  *
  * Pre-existing-token flow:
- *   baseline login --server <url> --token <raw-token>
+ *   baseline-cloud cloud login --server <url> --token <raw-token>
  *   For admins who issued a token from the dashboard and want to give
  *   it directly to a machine (no password needed).
  */
@@ -173,7 +173,7 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
     const hint = loginBody?.token_issue ?? 'Ask your admin to issue a token from Dashboard → Admin → Tokens'
     logger.warn(`✓ Logged in as ${user.username}, but no bearer token is available.`)
     logger.warn(hint)
-    logger.warn('Then run: baseline cloud login --server <url> --token <raw-token>')
+    logger.warn('Then run: baseline-cloud cloud login --server <url> --token <raw-token>')
     exit(0)
   }
 

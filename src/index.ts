@@ -1,8 +1,8 @@
 /**
- * @amsintegra/baseline-cloud-client — addon entry point.
+ * @baseline-ia/baseline-cloud-client — addon entry point.
  *
- * The baseline CLI's loader (in `@amsintegra/ams-base-ai/plugins/loader.ts`)
- * does `await import('@amsintegra/baseline-cloud-client')` at startup
+ * The baseline CLI's loader imports `@baseline-ia/baseline-cloud-client`
+ * at startup
  * and calls this default export with a plugin context.
  *
  * This file has THREE responsibilities:
@@ -70,12 +70,12 @@ import { Command } from 'commander'
 
 /**
  * Local copies of the plugin API types from
- * `@amsintegra/ams-base-ai/plugins`. We re-declare them here
+ * the host CLI's plugin API. We re-declare them here
  * (rather than importing) because:
  *
  *   1. The addon's tsup build needs the type declarations to be
  *      present at build time. Importing the host's plugins module
- *      requires `npm link @amsintegra/ams-base-ai` in the dev
+ *      requires the host CLI package to be linked in development
  *      workspace, which is the user-flow we want but not the
  *      developer-flow for a fresh `git clone` of the addon.
  *
@@ -348,7 +348,7 @@ export function buildKiroCommand(): Command {
 
 /**
  * The default export is the loader's contract. The host CLI does
- * `const addon = (await import('@amsintegra/baseline-cloud-client')).default`
+ * `const addon = (await import('@baseline-ia/baseline-cloud-client')).default`
  * and calls it with a plugin context.
  *
  * We register four things in this function:
@@ -364,7 +364,7 @@ export function buildKiroCommand(): Command {
  */
 // Also export the register function under its name (in addition to
 // being the default export) so consumers can do:
-//   import { register } from '@amsintegra/baseline-cloud-client'
+//   import { register } from '@baseline-ia/baseline-cloud-client'
 // without needing the default-import dance.
 export async function register(ctx: PluginContext): Promise<AddonManifest> {
   return registerImpl(ctx)
@@ -473,7 +473,7 @@ function logRegistrationError(what: string, err: unknown): void {
 
 // ---------- Public API re-exports ----------
 // These are re-exported so consumers can do:
-//   import { login, telemetry } from '@amsintegra/baseline-cloud-client'
+//   import { login, telemetry } from '@baseline-ia/baseline-cloud-client'
 
 export {
   // auth

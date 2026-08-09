@@ -159,11 +159,11 @@ describe('addon e2e > register() + emit → mock cloud', () => {
     const { flush } = await import('../src/telemetry')
     await flush()
 
-    // The mock server should have received exactly one POST to /v1/events/batch
+    // The mock server should have received exactly one POST to /api/v1/events/batch
     expect(receivedRequests).toHaveLength(1)
     const req = receivedRequests[0]!
     expect(req.method).toBe('POST')
-    expect(req.url).toBe('/v1/events/batch')
+    expect(req.url).toBe('/api/v1/events/batch')
     expect(req.headers.authorization).toBe('Bearer test-token-abc')
     expect(req.headers['content-type']).toBe('application/json')
     expect(req.body).toBeTruthy()

@@ -9,7 +9,7 @@
  * Conventions:
  *  - All bodies are JSON.
  *  - Bearer auth is added by the caller (we don't auto-attach it,
- *    because some endpoints like /v1/auth/login and /v1/auth/signup
+ *    because some endpoints like /api/v1/auth/login and /api/v1/auth/signup
  *    are unauthenticated).
  *  - The Cloud addon never uses node:http, node:https, axios, or any
  *    other HTTP client — fetch is built into Node 18+ and is the only

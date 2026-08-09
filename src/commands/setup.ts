@@ -250,7 +250,7 @@ export async function setup(): Promise<void> {
       name: tool.label,
       detected,
       hooksSupported: tool.hooksSupported,
-      note: 'note' in tool ? tool.note : undefined,
+      note: 'note' in tool && typeof tool.note === 'string' ? tool.note : undefined,
     }
 
     if (detected && tool.hooksSupported) {
@@ -290,6 +290,6 @@ export async function setup(): Promise<void> {
   }
 
   logger.title('Next steps')
-  logger.info('  Run `baseline-cloud login` if you haven\'t already.')
+  logger.info('  Run `baseline-cloud cloud login` if you haven\'t already.')
   logger.dim('  Hooks fire automatically from now on — no restart needed.')
 }

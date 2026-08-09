@@ -11,7 +11,7 @@ import {
 
 // In-process tests for the addon's public surface.
 //
-// We don't load the addon via `await import('@amsintegra/baseline-cloud-client')`
+// We don't load the addon via `await import('@baseline-ia/baseline-cloud-client')`
 // (the loader's path); instead, we import the source directly and
 // exercise the register() function with a fake plugin context. This
 // is the same code path the loader runs, just without the dynamic

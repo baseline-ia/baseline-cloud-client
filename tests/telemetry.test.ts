@@ -123,7 +123,7 @@ describe('telemetry > track + flush', () => {
     expect(body.events).toHaveLength(20)
   })
 
-  it('sends to /v1/events/batch with the correct auth header', async () => {
+  it('sends to /api/v1/events/batch with the correct auth header', async () => {
     process.env.BASELINE_CLOUD_URL = 'https://x.test'
     process.env.BASELINE_CLOUD_TOKEN = 'mytoken'
     const fetchSpy = vi
@@ -137,7 +137,7 @@ describe('telemetry > track + flush', () => {
     await flush()
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      'https://x.test/v1/events/batch',
+      'https://x.test/api/v1/events/batch',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({ Authorization: 'Bearer mytoken' }),
@@ -213,7 +213,7 @@ describe('telemetry > track + flush', () => {
     track({ event_type: 'change.open', project: 'p', payload: {} })
     await flush()
 
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe('https://x.test/v1/events/batch')
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe('https://x.test/api/v1/events/batch')
   })
 })
 

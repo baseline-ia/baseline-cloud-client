@@ -11,10 +11,10 @@
  *   1. `BASELINE_CLOUD_URL` + `BASELINE_CLOUD_TOKEN` env vars (for CI
  *      and ephemeral environments where the user doesn't want a
  *      persistent token on disk).
- *   2. `~/.baseline/cloud.json` (written by `baseline login`).
+ *   2. `~/.baseline/cloud.json` (written by `baseline-cloud cloud login`).
  *
  * If neither resolves, telemetry is effectively off (the track function
- * short-circuits). The user can `baseline login` to enable it.
+ * short-circuits). The user can run `baseline-cloud cloud login` to enable it.
  *
  * SECURITY:
  *  - The config file is written with mode 0600 (Unix only). On Windows
@@ -71,7 +71,7 @@ let _homedirOverride: string | null = null
  *   3. null (telemetry off)
  *
  * The result is memoized: subsequent calls return the same object. To
- * force a re-read (e.g., after `baseline login` writes a new config),
+ * force a re-read (e.g., after `baseline-cloud cloud login` writes a new config),
  * call `clearConfig()` first.
  */
 export function loadConfig(): CloudConfig | null {
@@ -94,7 +94,7 @@ export function loadConfig(): CloudConfig | null {
       }
     } catch {
       // Corrupted config — ignore and continue without telemetry. The
-      // user can `baseline login` to overwrite.
+      // user can run `baseline-cloud cloud login` to overwrite.
     }
   }
 

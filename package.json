@@ -2,6 +2,25 @@
   "name": "@baseline-ia/baseline-cloud-client",
   "version": "0.1.0",
   "description": "Optional addon — connects any CLI to a self-hosted baseline-cloud instance for telemetry, openspec lifecycle tracking, and post-commit git hooks.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/baseline-ia/baseline-cloud-client.git"
+  },
+  "homepage": "https://github.com/baseline-ia/baseline-cloud-client#readme",
+  "bugs": {
+    "url": "https://github.com/baseline-ia/baseline-cloud-client/issues"
+  },
+  "keywords": [
+    "baseline",
+    "baseline-cloud",
+    "telemetry",
+    "opencode",
+    "claude-code",
+    "kiro",
+    "cli",
+    "plugin"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -47,5 +66,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

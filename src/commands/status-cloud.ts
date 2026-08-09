@@ -26,7 +26,7 @@ export function statusCloud(): void {
     logger.info(`  Config:     ${path} ${existsSync(path) ? '✓' : '(missing)'}`)
     logger.info(`  Enabled:    ${enabled ? 'yes' : 'no (BASELINE_TELEMETRY=0 or disabled)'}`)
   } else {
-    logger.info('  Not configured. Run `baseline login` to connect.')
+    logger.info('  Not configured. Run `baseline-cloud cloud login` to connect.')
   }
   logger.info(`  Local env:  ${ctx.os} ${ctx.arch}, Node ${ctx.nodeVersion}`)
   // Show the home dir for context (so the user can sanity-check that

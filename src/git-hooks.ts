@@ -77,7 +77,7 @@ const HOOK_MARKER = '# baseline-cli post-commit hook'
 function postCommitScript(): string {
   return `#!/bin/sh
 ${HOOK_MARKER}
-# Auto-installed by the @amsintegra/baseline-cloud-client addon. Do not edit.
+# Auto-installed by the @baseline-ia/baseline-cloud-client addon. Do not edit.
 
 # Extract the SDD change name from committed paths using POSIX-compatible tools.
 CHANGE_NAME=$(git diff-tree --no-commit-id --name-only -r HEAD | grep -E '^openspec/changes/[^/]+/' | head -1 | cut -d'/' -f3)
