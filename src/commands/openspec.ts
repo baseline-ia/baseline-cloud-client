@@ -31,6 +31,7 @@ import { join } from 'node:path'
 import { logger } from '../logger'
 import { track, parseEstimate, type WorkType } from '../telemetry'
 import { syncOpenspecChanges, readProposalFrontmatter } from '../openspec-tracker'
+import { resolveProjectIdentity } from '../project-identity'
 
 const VALID_TYPES: WorkType[] = [
   'feature',
@@ -153,6 +154,7 @@ export async function openspecNew(
   }
 
   const root = opts.cwd ?? findProjectRoot()
+  const project = resolveProjectIdentity(root)
   const dir = changeDir(root, name)
   if (existsSync(dir)) {
     logger.error(`Change '${name}' already exists at ${dir}`)
@@ -185,7 +187,7 @@ export async function openspecNew(
   // Fire change.open event with the estimate
   track({
     event_type: 'change.open',
-    project: 'default',
+    project,
     payload: {
       changeName: name,
       workType: type,
@@ -250,6 +252,7 @@ export async function openspecClose(
   opts: { cwd?: string } = {}
 ): Promise<void> {
   const root = opts.cwd ?? findProjectRoot()
+  const project = resolveProjectIdentity(root)
   const dir = changeDir(root, name)
   if (!existsSync(dir)) {
     logger.error(`Change '${name}' not found at ${dir}`)
@@ -296,7 +299,7 @@ export async function openspecClose(
 
   track({
     event_type: 'change.close',
-    project: 'default',
+    project,
     payload: {
       changeName: name,
       workType,

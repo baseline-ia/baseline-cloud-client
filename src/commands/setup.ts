@@ -20,6 +20,25 @@ const TOOLS = [
   { id: 'commandcode', label: 'CommandCode',    binary: 'commandcode',  hooksSupported: true  },
 ] as const
 
+const WORKFLOW_SKILL_NAME = 'baseline-cloud-workflow'
+const WORKFLOW_SKILL_SOURCE_CANDIDATES = [
+  join(__dirname, '..', 'skills', WORKFLOW_SKILL_NAME, 'SKILL.md'),
+  join(__dirname, '..', '..', 'skills', WORKFLOW_SKILL_NAME, 'SKILL.md'),
+]
+
+function workflowSkillSource(): string | null {
+  return WORKFLOW_SKILL_SOURCE_CANDIDATES.find((candidate) => existsSync(candidate)) ?? null
+}
+
+export function installWorkflowSkill(destinationRoot: string, source = workflowSkillSource()): boolean {
+  if (!source) return false
+  const destination = join(destinationRoot, 'skills', WORKFLOW_SKILL_NAME, 'SKILL.md')
+  if (existsSync(destination)) return true
+  mkdirSync(join(destinationRoot, 'skills', WORKFLOW_SKILL_NAME), { recursive: true })
+  copyFileSync(source, destination)
+  return true
+}
+
 function isInstalled(tool: typeof TOOLS[number]): boolean {
   if ('binary' in tool) {
     try {
@@ -95,6 +114,13 @@ function setupClaudeCodeHooks(): boolean {
   return true
 }
 
+function setupClaudeCodeSkill(): boolean {
+  const installed = installWorkflowSkill(join(process.cwd(), '.claude'))
+  if (installed) logger.success('  ✓ Conversational skill installed in .claude/skills')
+  else logger.warn('  Could not find bundled conversational skill')
+  return installed
+}
+
 // ---------- OpenCode plugin setup ----------
 
 const PLUGIN_SRC = join(__dirname, '..', 'opencode-plugin.cjs')
@@ -111,6 +137,10 @@ function setupOpenCodePlugin(): boolean {
   mkdirSync(OPENCODE_PLUGIN_DIR, { recursive: true })
   copyFileSync(PLUGIN_SRC, OPENCODE_PLUGIN_DEST)
   logger.success('  ✓ Plugin installed at ~/.opencode/plugins/baseline-cloud/index.cjs')
+
+  const skillInstalled = installWorkflowSkill(join(process.cwd(), '.opencode'))
+  if (skillInstalled) logger.success('  ✓ Conversational skill installed in .opencode/skills')
+  else logger.warn('  Could not find bundled conversational skill')
 
   let config: any = {}
   if (existsSync(OPENCODE_CONFIG)) {
@@ -137,7 +167,7 @@ function setupOpenCodePlugin(): boolean {
     logger.dim('  · Plugin already registered in ~/.opencode/config.json')
   }
 
-  return true
+  return skillInstalled
 }
 
 // ---------- Kiro setup ----------
@@ -145,6 +175,11 @@ function setupOpenCodePlugin(): boolean {
 const KIRO_STEERING_DIR = join(homedir(), '.kiro', 'steering')
 const KIRO_STEERING_FILE = join(KIRO_STEERING_DIR, 'baseline-cloud.md')
 const KIRO_PERMISSIONS_FILE = join(homedir(), '.kiro', 'settings', 'permissions.yaml')
+
+const KIRO_WORKFLOW_CONTENT = `## baseline-cloud Conversational Workflow
+
+Use .baseline/project.json as the stable project identity. If it is absent, run \`baseline-cloud project init --slug <repo-slug>\` without storing tokens in the repository. Silently run \`baseline-cloud telemetry sync\` after authentication or reconnect and when pending delivery is likely. Wrap executable SDD phases with \`baseline-cloud sdd phase run --phase ... --change ... --project ... -- <command>\`; for agent-native phases, use \`start\` and failure-safe \`complete\`. Execute maintenance commands yourself when possible, continue user work if telemetry is unavailable, and report only actionable failures.
+`
 
 const KIRO_STEERING_CONTENT = `## baseline-cloud Telemetry
 
@@ -156,6 +191,8 @@ When the user sends a message that starts with \`/skill-name\` (e.g. \`/sdd-new\
    \`\`\`
 
 For credit/session tracking, run \`baseline-cloud kiro scan\` once at the start of your first turn in a new session.
+
+${KIRO_WORKFLOW_CONTENT}
 `
 
 function setupKiroSteering(): boolean {
@@ -165,9 +202,19 @@ function setupKiroSteering(): boolean {
     return false
   }
 
-  // Write steering file
-  writeFileSync(KIRO_STEERING_FILE, KIRO_STEERING_CONTENT, 'utf8')
-  logger.success('  ✓ Steering file written: ~/.kiro/steering/baseline-cloud.md')
+  // Preserve user steering content and append the managed block only once.
+  const existingSteering = existsSync(KIRO_STEERING_FILE)
+    ? readFileSync(KIRO_STEERING_FILE, 'utf8')
+    : ''
+  if (!existingSteering.includes('## baseline-cloud Conversational Workflow')) {
+    const content = existingSteering
+      ? existingSteering.trimEnd() + '\n\n' + KIRO_WORKFLOW_CONTENT
+      : KIRO_STEERING_CONTENT
+    writeFileSync(KIRO_STEERING_FILE, content, 'utf8')
+    logger.success('  ✓ Steering workflow installed: ~/.kiro/steering/baseline-cloud.md')
+  } else {
+    logger.dim('  · Kiro steering workflow already present')
+  }
 
   // Update permissions.yaml — append a shell rule if not already present
   if (existsSync(KIRO_PERMISSIONS_FILE)) {

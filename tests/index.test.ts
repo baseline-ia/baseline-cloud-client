@@ -6,6 +6,7 @@ import {
   buildHooksCommand,
   buildSddCommand,
   buildTelemetryCommand,
+  buildProjectCommand,
   register,
   type PluginContext,
   type TelemetryEventLike,
@@ -101,6 +102,15 @@ describe('addon > buildTelemetryCommand', () => {
   })
 })
 
+describe('addon > buildProjectCommand', () => {
+  it('registers project init with slug, path, and force options', () => {
+    const cmd = buildProjectCommand()
+    expect(cmd.commands.map((c) => c.name())).toEqual(['init'])
+    const init = cmd.commands[0]!
+    expect(init.options.map((o) => o.long)).toEqual(expect.arrayContaining(['--slug', '--path', '--force']))
+  })
+})
+
 describe('addon > register', () => {
   beforeEach(() => {
     capturedTelemetryHandlers = []
@@ -113,11 +123,11 @@ describe('addon > register', () => {
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+/)
   })
 
-  it('registers eight subcommands including SDD timing and telemetry recovery', async () => {
+  it('registers nine subcommands including project identity management', async () => {
     const ctx = makePluginContext()
     await register(ctx)
     const names = ctx.registeredCommands.map((c) => c.name()).sort()
-    expect(names).toEqual(['cloud', 'hooks', 'kiro', 'openspec', 'sdd', 'session', 'skill', 'telemetry'])
+    expect(names).toEqual(['cloud', 'hooks', 'kiro', 'openspec', 'project', 'sdd', 'session', 'skill', 'telemetry'])
   })
 
   it('registers at least one telemetry handler', async () => {

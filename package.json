@@ -1,6 +1,6 @@
 {
   "name": "@baseline-ia/baseline-cloud-client",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Optional addon — connects any CLI to a self-hosted baseline-cloud instance for telemetry, openspec lifecycle tracking, and post-commit git hooks.",
   "license": "MIT",
   "repository": {
@@ -47,6 +47,7 @@
     "dist",
     "hooks",
     "opencode-plugin.cjs",
+    "skills",
     "README.md"
   ],
   "preferGlobal": true,

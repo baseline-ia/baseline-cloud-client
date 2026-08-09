@@ -6,6 +6,7 @@ import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { track, flush } from '../telemetry'
 import { logger } from '../logger'
+import { resolveProjectIdentity } from '../project-identity'
 
 const KIRO_SESSIONS_DIR = join(homedir(), '.kiro', 'sessions')
 const SCAN_STATE_FILE = join(homedir(), '.config', 'baseline-cloud', 'kiro-scan.json')
@@ -110,7 +111,7 @@ export async function kiroScan(opts: { dryRun?: boolean } = {}): Promise<void> {
       if (credits === 0) continue
 
       const meta = readSessionMeta(sessDir)
-      const project = meta?.workspaceDir ? path.basename(meta.workspaceDir) : wsId
+       const project = resolveProjectIdentity(meta?.workspaceDir || wsId)
 
       if (!opts.dryRun) {
         track({

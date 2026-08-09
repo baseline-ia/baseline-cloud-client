@@ -79,6 +79,10 @@ baseline-cloud setup
 
 Setup currently supports Claude Code, OpenCode, Kiro IDE, Kiro CLI, and CommandCode. It can install hooks, steering instructions, or the OpenCode plugin where the tool is detected.
 
+### Conversational AI skill
+
+`baseline-cloud setup` installs the reusable `baseline-cloud-workflow` skill into the detected project's `.claude/skills` and `.opencode/skills` locations without replacing existing files. Kiro receives the same guidance in its managed steering block, which is appended only when missing. The skill teaches supported agents to resolve `.baseline/project.json`, wrap SDD timing, and sync queued telemetry without interrupting user work. Re-running setup is safe and idempotent.
+
 ## Telemetry
 
 Telemetry is sent only when cloud credentials are available. Opt out for a process or CI job with:
@@ -88,6 +92,34 @@ BASELINE_TELEMETRY=0 baseline-cloud cloud status
 ```
 
 Host applications can also disable telemetry with their own `--no-telemetry` option when supported. Disabling telemetry clears queued events and prevents new events from being sent.
+
+### Project identity
+
+Project-scoped telemetry uses one stable slug resolver. The precedence is:
+
+1. An explicit simple name passed with `--project`, such as `--project baseline-cloud-client`.
+2. The nearest `.baseline/project.json` found from the requested directory (or cwd) upward.
+3. The repository name from the directory's Git `remote.origin.url` when it is a GitHub or Bitbucket HTTPS, SSH, or SCP URL.
+4. The current directory basename when no valid supported Git origin exists.
+
+The result is lowercased, unsupported characters become `-`, and the slug is limited to 128 characters. For example, `https://github.com/baseline-ia/baseline-cloud-client.git` becomes `baseline-cloud-client`; `--project client-a` always remains the explicit `client-a` identity.
+
+To configure a stable identity for a repository, commit this normal JSON file at `.baseline/project.json`:
+
+```json
+{
+  "slug": "baseline-cloud-client"
+}
+```
+
+Initialize it from the repository root, or target another directory with `--path`:
+
+```bash
+baseline-cloud project init --slug baseline-cloud-client
+baseline-cloud project init --slug client-a --path /path/to/project
+```
+
+The command refuses to overwrite an existing file unless `--force` is provided. Commit `.baseline/project.json` with the project so every checkout uses the same identity. Never put credentials or tokens in this file; tokens remain in `~/.baseline/cloud.json`.
 
 ## SDD Phase Timing
 

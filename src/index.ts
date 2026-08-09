@@ -69,6 +69,7 @@ import { sessionTrack } from './commands/session'
 import { sddPhaseStart, sddPhaseComplete, sddPhaseRun, syncSddPhaseEvents } from './commands/sdd-phase'
 import { kiroScan } from './commands/kiro'
 import { Command } from 'commander'
+import { resolveProjectIdentity, initProjectConfig } from './project-identity'
 
 /**
  * Local copies of the plugin API types from
@@ -197,6 +198,22 @@ export function buildTelemetryCommand(): Command {
   return telemetry
 }
 
+/** Build the repo-local project identity command tree. */
+export function buildProjectCommand(): Command {
+  const project = new Command('project').description('Manage repo-local project identity')
+  project
+    .command('init')
+    .description('Write .baseline/project.json for the current project')
+    .requiredOption('--slug <slug>', 'Project slug')
+    .option('--path <directory>', 'Project directory (defaults to cwd)')
+    .option('--force', 'Overwrite an existing project config')
+    .action((opts: { slug: string; path?: string; force?: boolean }) => {
+      const configPath = initProjectConfig(opts.slug, opts.path ?? process.cwd(), opts.force)
+      logger.success(`Project config written to ${configPath}`)
+    })
+  return project
+}
+
 /**
  * Build the `openspec` commander subcommand tree.
  */
@@ -298,8 +315,8 @@ export function buildSkillCommand(): Command {
     .requiredOption('--name <name>', 'Skill name (e.g. sdd-new, sdd-apply)')
     .option('--project <path>', 'Project directory path (defaults to cwd)')
     .option('--duration-ms <ms>', 'Time the skill took to respond (ms)')
-    .action((opts: { name: string; project?: string; durationMs?: string }) => {
-      skillTrack({
+    .action(async (opts: { name: string; project?: string; durationMs?: string }) => {
+      await skillTrack({
         name: opts.name,
         project: opts.project ?? process.cwd(),
         durationMs: opts.durationMs !== undefined ? Number(opts.durationMs) : undefined,
@@ -484,6 +501,13 @@ export default async function registerImpl(ctx: PluginContext): Promise<AddonMan
     logRegistrationError('telemetry', err)
   }
 
+  // Repo-local project identity command
+  try {
+    ctx.registerCommand(buildProjectCommand())
+  } catch (err) {
+    logRegistrationError('project', err)
+  }
+
   // Telemetry forwarder. Every event the host CLI emits (cli.install,
   // cli.update, etc.) is forwarded to the cloud via the addon's own
   // track function. The host's `emitTelemetry` is the upstream
@@ -503,10 +527,10 @@ export default async function registerImpl(ctx: PluginContext): Promise<AddonMan
       // telemetry format. The host emits with `event_type` (string)
       // and `payload` (object). The addon expects the same shape.
       try {
-        track({
-          event_type: event.event_type as EventType,
-          project: event.project ?? 'default',
-          payload: event.payload ?? {},
+          track({
+            event_type: event.event_type as EventType,
+            project: event.project ? resolveProjectIdentity(event.project) : 'default',
+            payload: event.payload ?? {},
         })
       } catch (err) {
         // Swallow — the host's emitTelemetry already wraps this in
@@ -564,6 +588,9 @@ export {
   // openspec-tracker
   syncOpenspecChanges,
   readProposalFrontmatter,
+  // project identity
+  resolveProjectIdentity,
+  initProjectConfig,
   // git-hooks
   installHook,
   uninstallHook,

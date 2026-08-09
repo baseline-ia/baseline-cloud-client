@@ -1,8 +1,8 @@
-import path from 'node:path'
 import { createReadStream } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { track, flush } from '../telemetry'
 import { logger } from '../logger'
+import { resolveProjectIdentity } from '../project-identity'
 
 export interface TokenUsage {
   inputTokens: number
@@ -69,7 +69,7 @@ export async function sessionTrack(opts: {
     }
   }
 
-  const project = opts.project ? path.basename(opts.project) : 'default'
+  const project = resolveProjectIdentity(opts.project)
 
   const total = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
 

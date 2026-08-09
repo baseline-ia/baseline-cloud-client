@@ -29,6 +29,7 @@ import fs from 'fs-extra'
 import { logger } from './logger'
 import { track } from './telemetry'
 import { getBaselineConfigDir } from './auth'
+import { resolveProjectIdentity } from './project-identity'
 
 /**
  * Indirection for `child_process.execSync`. The real implementation
@@ -257,10 +258,12 @@ export function fireCommitEvent(opts: {
   linesAdded: number
   linesRemoved: number
   authorEmail?: string
+  project?: string
 }): void {
+  const { project: projectPath, ...payload } = opts
   track({
     event_type: 'change.commit',
-    project: 'default',
-    payload: opts,
+    project: resolveProjectIdentity(projectPath),
+    payload,
   })
 }

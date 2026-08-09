@@ -48,15 +48,15 @@ describe('sdd phase timing', () => {
     expect(Object.values(state.phases)[0]).toEqual({
       phase: 'design',
       change: 'add-feature',
-      project: '/tmp/example-project',
+       project: 'example-project',
       startedAt: '2026-01-01T10:00:00.000Z',
     })
     const body = JSON.parse((vi.mocked(globalThis.fetch).mock.calls[0]?.[1] as any).body)
     expect(body.events[0]).toMatchObject({
       event_type: 'sdd.phase.started',
-      project: '/tmp/example-project',
+       project: 'example-project',
       occurred_at: '2026-01-01T10:00:00.000Z',
-      payload: { phase: 'design', change: 'add-feature', project: '/tmp/example-project', startedAt: '2026-01-01T10:00:00.000Z' },
+       payload: { phase: 'design', change: 'add-feature', project: 'example-project', startedAt: '2026-01-01T10:00:00.000Z' },
     })
   })
 

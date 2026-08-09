@@ -23,6 +23,7 @@ import { join, dirname } from 'node:path'
 import { track, isEnabled } from './telemetry'
 import type { WorkType } from './telemetry'
 import { getBaselineConfigDir } from './auth'
+import { resolveProjectIdentity } from './project-identity'
 
 /**
  * Returns the state file path. Computed on each call (not cached) so
@@ -133,6 +134,7 @@ function findChangeDirs(projectRoot: string): string[] {
  */
 export function syncOpenspecChanges(projectRoot: string): void {
   if (!isEnabled()) return
+  const project = resolveProjectIdentity(projectRoot)
   const state = loadState()
   const currentDirs = findChangeDirs(projectRoot)
   const currentNames = new Set(
@@ -148,7 +150,7 @@ export function syncOpenspecChanges(projectRoot: string): void {
       readProposalFrontmatter(proposalPath)
     track({
       event_type: 'change.open',
-      project: 'default',
+       project,
       payload: {
         changeName: name,
         workType,
@@ -175,7 +177,7 @@ export function syncOpenspecChanges(projectRoot: string): void {
     const durationMs = Date.now() - meta.openedAt
     track({
       event_type: 'change.close',
-      project: 'default',
+       project,
       payload: {
         changeName: name,
         workType: meta.workType,

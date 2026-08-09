@@ -1,13 +1,13 @@
-import path from 'node:path'
 import { track, flush } from '../telemetry'
 import { logger } from '../logger'
+import { resolveProjectIdentity } from '../project-identity'
 
-export function skillTrack(opts: {
+export async function skillTrack(opts: {
   name: string
   project?: string
   durationMs?: number
-}): void {
-  const project = opts.project ? path.basename(opts.project) : 'default'
+}): Promise<void> {
+  const project = resolveProjectIdentity(opts.project)
 
   track({
     event_type: 'skill.used',
@@ -18,6 +18,6 @@ export function skillTrack(opts: {
     },
   })
 
-  void flush()
+  await flush()
   logger.success(`✓ skill.used tracked: ${opts.name} [${project}]`)
 }

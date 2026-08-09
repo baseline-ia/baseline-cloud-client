@@ -4,6 +4,7 @@ import path from 'node:path'
 import { getBaselineConfigDir } from '../auth'
 import { logger } from '../logger'
 import { deliverEvents, type EventPayload } from '../telemetry'
+import { resolveProjectIdentity } from '../project-identity'
 
 export const SDD_PHASES = ['explore', 'propose', 'spec', 'design', 'tasks', 'apply', 'verify', 'archive'] as const
 export type SddPhase = (typeof SDD_PHASES)[number]
@@ -38,14 +39,6 @@ function removeStateFileIfEmpty(state: StateFile): void {
   else saveState(state)
 }
 
-/** Resolve a path to a stable project key; explicit simple names remain names. */
-export function resolveProjectKey(project?: string): string {
-  const value = project?.trim()
-  if (!value) return path.normalize(path.resolve(process.cwd()))
-  if (!path.isAbsolute(value) && !value.includes('/') && !value.includes('\\') && !existsSync(value)) return value
-  return path.normalize(path.resolve(value))
-}
-
 function validatePhase(phase: string): SddPhase {
   if ((SDD_PHASES as readonly string[]).includes(phase)) return phase as SddPhase
   throw new Error(`Invalid SDD phase '${phase}'. Use one of: ${SDD_PHASES.join(', ')}.`)
@@ -72,7 +65,7 @@ async function persistAndDeliver(state: StateFile, eventKey: string, pending: Pe
 export async function sddPhaseStart(opts: { phase: string; change: string; project?: string }): Promise<void> {
   const phase = validatePhase(opts.phase)
   const change = requireValue(opts.change, 'change')
-  const project = resolveProjectKey(opts.project)
+  const project = resolveProjectIdentity(opts.project)
   const state = loadState()
   const key = stateKey(phase, change, project)
   if (state.phases[key]) throw new Error(`SDD phase '${phase}' is already started for change '${change}' in project '${project}'.`)
@@ -102,7 +95,7 @@ function completionEvent(started: PhaseState, completedAt: string, status?: 'com
 async function completeState(opts: { phase: string; change: string; project?: string }, status?: 'completed' | 'failed'): Promise<void> {
   const phase = validatePhase(opts.phase)
   const change = requireValue(opts.change, 'change')
-  const project = resolveProjectKey(opts.project)
+  const project = resolveProjectIdentity(opts.project)
   const state = loadState()
   const key = stateKey(phase, change, project)
   const started = state.phases[key]
