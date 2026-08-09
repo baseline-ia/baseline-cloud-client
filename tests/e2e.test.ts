@@ -124,6 +124,7 @@ describe('addon e2e > register() + emit → mock cloud', () => {
       'session',
       'skill',
       'telemetry',
+      'update',
     ])
   })
 

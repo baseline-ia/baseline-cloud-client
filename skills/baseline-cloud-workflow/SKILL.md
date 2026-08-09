@@ -14,6 +14,8 @@ Activate for repository work using Baseline Cloud, SDD phases, project enrollmen
 - Use `.baseline/project.json` as stable project identity. If absent, run `baseline-cloud project init --slug <repo-slug>` from the repository root; never store tokens in the repository.
 - Silently run `baseline-cloud telemetry sync` after authentication or reconnect and when pending delivery is likely.
 - Do not ask the developer to type maintenance commands when you can execute them.
+- If the installed CLI is stale or missing a requested command, run `baseline-cloud update` first; it updates the global package and refreshes detected integrations with the latest skill guidance.
+- After updating, allow the command to run setup; do not manually overwrite user integration files.
 - Keep user-facing work independent of telemetry; report only actionable failures.
 
 ## Decision Gates
@@ -22,6 +24,7 @@ Activate for repository work using Baseline Cloud, SDD phases, project enrollmen
 | Executable SDD phase | Wrap it with `baseline-cloud sdd phase run --phase ... --change ... --project ... -- <command>`. |
 | Agent-native phase | Run `start`, perform the phase, then always attempt `complete`, including after failure. |
 | Missing identity | Initialize once; reuse the resulting file. |
+| Stale CLI or outdated skill guidance | Run `baseline-cloud update`, then continue with the refreshed integrations. |
 | Telemetry unavailable | Continue the task and retain pending delivery. |
 
 ## Execution Steps

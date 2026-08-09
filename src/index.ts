@@ -68,6 +68,7 @@ import { skillTrack } from './commands/skill'
 import { sessionTrack } from './commands/session'
 import { sddPhaseStart, sddPhaseComplete, sddPhaseRun, syncSddPhaseEvents } from './commands/sdd-phase'
 import { kiroScan } from './commands/kiro'
+import { update } from './commands/update'
 import { Command } from 'commander'
 import { resolveProjectIdentity, initProjectConfig } from './project-identity'
 
@@ -212,6 +213,21 @@ export function buildProjectCommand(): Command {
       logger.success(`Project config written to ${configPath}`)
     })
   return project
+}
+
+/** Build the global package update command. */
+export function buildUpdateCommand(): Command {
+  return new Command('update')
+    .description('Update the globally installed package and refresh AI integrations')
+    .action(() => {
+      try {
+        update()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        logger.error(`Update failed: ${message}`)
+        process.exitCode = 1
+      }
+    })
 }
 
 /**
@@ -508,6 +524,13 @@ export default async function registerImpl(ctx: PluginContext): Promise<AddonMan
     logRegistrationError('project', err)
   }
 
+  // Global package update and integration refresh
+  try {
+    ctx.registerCommand(buildUpdateCommand())
+  } catch (err) {
+    logRegistrationError('update', err)
+  }
+
   // Telemetry forwarder. Every event the host CLI emits (cli.install,
   // cli.update, etc.) is forwarded to the cloud via the addon's own
   // track function. The host's `emitTelemetry` is the upstream
@@ -621,6 +644,7 @@ export {
   syncSddPhaseEvents,
   // kiro integration
   kiroScan,
+  update,
   // test helpers
   _telemetryReset,
 }

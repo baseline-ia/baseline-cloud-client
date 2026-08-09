@@ -7,6 +7,7 @@ import {
   buildSddCommand,
   buildTelemetryCommand,
   buildProjectCommand,
+  buildUpdateCommand,
   register,
   type PluginContext,
   type TelemetryEventLike,
@@ -111,6 +112,15 @@ describe('addon > buildProjectCommand', () => {
   })
 })
 
+describe('addon > buildUpdateCommand', () => {
+  it('registers the update command with no recursive setup option', () => {
+    const cmd = buildUpdateCommand()
+    expect(cmd.name()).toBe('update')
+    expect(cmd.commands).toHaveLength(0)
+    expect(cmd.options).toHaveLength(0)
+  })
+})
+
 describe('addon > register', () => {
   beforeEach(() => {
     capturedTelemetryHandlers = []
@@ -123,11 +133,11 @@ describe('addon > register', () => {
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+/)
   })
 
-  it('registers nine subcommands including project identity management', async () => {
+  it('registers ten subcommands including update and project identity management', async () => {
     const ctx = makePluginContext()
     await register(ctx)
     const names = ctx.registeredCommands.map((c) => c.name()).sort()
-    expect(names).toEqual(['cloud', 'hooks', 'kiro', 'openspec', 'project', 'sdd', 'session', 'skill', 'telemetry'])
+    expect(names).toEqual(['cloud', 'hooks', 'kiro', 'openspec', 'project', 'sdd', 'session', 'skill', 'telemetry', 'update'])
   })
 
   it('registers at least one telemetry handler', async () => {

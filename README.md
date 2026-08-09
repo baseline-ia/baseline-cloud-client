@@ -79,6 +79,16 @@ baseline-cloud setup
 
 Setup currently supports Claude Code, OpenCode, Kiro IDE, Kiro CLI, and CommandCode. It can install hooks, steering instructions, or the OpenCode plugin where the tool is detected.
 
+### Update the CLI
+
+When an installed CLI is stale or does not include a requested command, update the global npm package and refresh detected integrations in one step:
+
+```bash
+baseline-cloud update
+```
+
+The command runs `npm install --global @baseline-ia/baseline-cloud-client@latest`, then invokes setup from the freshly installed package. Setup is idempotent and does not replace existing user skill files or integration content. A failed install or setup returns a non-zero status. Credentials in `~/.baseline/cloud.json` and the project identity in `.baseline/project.json` remain unchanged.
+
 ### Conversational AI skill
 
 `baseline-cloud setup` installs the reusable `baseline-cloud-workflow` skill into the detected project's `.claude/skills` and `.opencode/skills` locations without replacing existing files. Kiro receives the same guidance in its managed steering block, which is appended only when missing. The skill teaches supported agents to resolve `.baseline/project.json`, wrap SDD timing, and sync queued telemetry without interrupting user work. Re-running setup is safe and idempotent.
