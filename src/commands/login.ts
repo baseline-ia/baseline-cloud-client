@@ -57,6 +57,7 @@ async function readRl() {
 export interface LoginOpts {
   noInput?: boolean
   serverUrl?: string
+  token?: string
   username?: string
   password?: string
   skipHookPrompt?: boolean
@@ -68,6 +69,24 @@ export interface LoginOpts {
  */
 export async function login(opts: LoginOpts = {}): Promise<void> {
   registerExitFlush()
+
+  // Direct token path: --server + --token skips the password flow entirely.
+  if (opts.token) {
+    const serverUrl = (opts.serverUrl ?? process.env.BASELINE_CLOUD_URL ?? '').replace(/\/+$/, '')
+    if (!serverUrl) {
+      logger.error('--token requires --server <url> or BASELINE_CLOUD_URL')
+      exit(1)
+    }
+    saveConfig({ server_url: serverUrl, token: opts.token })
+    logger.success(`✓ Token saved`)
+    logger.info(`  Server: ${serverUrl}`)
+    logger.info(`  Token prefix: ${opts.token.split('.')[0]}`)
+    logger.info(`  Config saved to ~/.baseline/cloud.json`)
+    track({ event_type: 'cli.login', project: 'default', payload: { serverUrl, via: 'token' } })
+    await flush()
+    return
+  }
+
   const noInput = opts.noInput ?? false
   let serverUrl = opts.serverUrl ?? process.env.BASELINE_CLOUD_URL
   let username = opts.username ?? process.env.BASELINE_CLOUD_USERNAME

@@ -142,6 +142,7 @@ export function buildCloudCommand(): Command {
     .description('Authenticate with a self-hosted baseline-cloud instance')
     .option('--no-input', 'Fail instead of prompting (use env vars)')
     .option('--server <url>', 'Server URL (overrides BASELINE_CLOUD_URL)')
+    .option('--token <raw>', 'Raw bearer token (skips username/password flow)')
     .option('--username <name>', 'Username (overrides BASELINE_CLOUD_USERNAME)')
     .option('--password <pwd>', 'Password (overrides BASELINE_CLOUD_PASSWORD)')
     .option('--skip-hook-prompt', 'Do not prompt to install the post-commit git hook')
@@ -149,6 +150,7 @@ export function buildCloudCommand(): Command {
       await login({
         noInput: opts.input === false,
         serverUrl: opts.server,
+        token: opts.token,
         username: opts.username,
         password: opts.password,
         skipHookPrompt: opts.skipHookPrompt,
