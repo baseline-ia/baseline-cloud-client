@@ -23,6 +23,23 @@ npm install @baseline-ia/baseline-cloud-client
 
 The package exports a programmatic plugin API and the `baseline-cloud` executable.
 
+### Install from the repository
+
+Until the package is published to npm, install the CLI from a local checkout:
+
+```bash
+git clone https://github.com/baseline-ia/baseline-cloud-client.git
+cd baseline-cloud-client
+npm install
+npm install --global .
+```
+
+Verify the installation with:
+
+```bash
+baseline-cloud --help
+```
+
 ## CLI Usage
 
 Authenticate interactively:
