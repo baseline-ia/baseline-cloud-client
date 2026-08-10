@@ -147,7 +147,7 @@ export async function deliverEvents(events: EventPayload[]): Promise<boolean> {
       body: JSON.stringify({ events }),
       signal: controller.signal,
     })
-    if (!res.ok && (res.status === 401 || res.status === 403)) setEnabled(false)
+    if (!res.ok && (res.status === 401 || res.status === 403)) _enabled = false
     return res.ok
   } catch {
     return false
@@ -229,8 +229,8 @@ export function track(event: EventPayload): boolean {
  * - If the server returns 401/403, telemetry is auto-disabled for the
  *   rest of the process (the user has bad credentials and we don't
  *   want to flood the server with auth errors).
- * - All other failures (network, 5xx) are silently dropped. Telemetry
- *   never blocks the CLI.
+ * - Failed deliveries are requeued without displacing events tracked while
+ *   the request was in flight. Telemetry never blocks the CLI.
  */
 export async function flush(): Promise<void> {
   if (_flushing || _queue.length === 0) return
@@ -244,7 +244,8 @@ export async function flush(): Promise<void> {
     const events = _queue
     _queue = []
 
-      await deliverEvents(events)
+    const delivered = await deliverEvents(events)
+    if (!delivered) _queue = [...events, ..._queue]
   } finally {
     _flushing = false
   }

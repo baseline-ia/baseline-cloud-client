@@ -35,25 +35,6 @@ interface LoginResponse {
   error?: string
 }
 
-interface LoginListResponse {
-  user: { id: string; username: string; email: string; role: 'admin' | 'member' }
-  tokens: Array<{
-    id: string
-    prefix: string
-    name: string
-    createdAt: string
-    lastUsedAt: string | null
-    revokedAt: string | null
-  }>
-  token_issue?: string
-  error?: string
-}
-
-interface TokenResponse {
-  token?: LoginResponse['token']
-  token_issue?: string
-}
-
 async function readRl() {
   return createInterface({ input: stdin, output: stdout })
 }
@@ -258,28 +239,15 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
   let raw: string | null = null
   let user: LoginResponse['user'] | null = null
   let warning: string | undefined
-  let tokenIssue: string | undefined
 
-  const loginRes = await postJson<LoginListResponse>(`${serverUrl}/api/v1/auth/login`, {
+  const loginRes = await postJson<LoginResponse>(`${serverUrl}/api/v1/auth/login`, {
     username,
     password,
   })
   if (loginRes.status === 200) {
-    const body = loginRes.json as LoginListResponse
+    const body = loginRes.json as LoginResponse
     user = body.user
-    try {
-      const tokenRes = await postJson<TokenResponse>(`${serverUrl}/api/v1/auth/token`, {
-        name: username,
-        password,
-      })
-      tokenIssue = tokenRes.json?.token_issue
-      if (tokenRes.status >= 200 && tokenRes.status < 300) {
-        raw = tokenRes.json?.token?.raw ?? null
-      }
-    } catch {
-      // Preserve the successful credential login result, but do not claim
-      // success with a saved token when issuance was unreachable.
-    }
+    raw = body.token?.raw ?? null
   } else if (loginRes.status === 401) {
     const body401 = loginRes.json as { reason?: string } | null
     if (body401?.reason !== 'not_found') {
@@ -312,11 +280,7 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
   }
 
   if (!raw) {
-    const loginBody = loginRes.json as LoginListResponse | null
-    const hint =
-      tokenIssue ??
-      loginBody?.token_issue ??
-      'Ask your admin to issue a token from Dashboard → Admin → Tokens'
+    const hint = 'Ask your admin to issue a token from Dashboard → Admin → Tokens'
     logger.warn(`✓ Logged in as ${user.username}, but no bearer token is available.`)
     logger.warn(hint)
     logger.warn('Then run: baseline-cloud cloud login --server <url> --token <raw-token>')

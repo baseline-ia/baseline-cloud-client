@@ -163,7 +163,7 @@ describe('telemetry > track + flush', () => {
     expect(isEnabled()).toBe(false)
   })
 
-  it('does NOT disable telemetry on a 500 (just drops the batch)', async () => {
+  it('does NOT disable telemetry on a 500 and requeues the batch', async () => {
     process.env.BASELINE_CLOUD_URL = 'https://x.test'
     process.env.BASELINE_CLOUD_TOKEN = 't'
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
@@ -179,9 +179,17 @@ describe('telemetry > track + flush', () => {
     await flush()
 
     expect(isEnabled()).toBe(true)
+
+    const retry = vi.mocked(globalThis.fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    } as any)
+    await flush()
+    expect(retry).toHaveBeenCalledTimes(2)
   })
 
-  it('silently drops events on network error (no throw, no requeue)', async () => {
+  it('silently requeues events on network error without throwing', async () => {
     process.env.BASELINE_CLOUD_URL = 'https://x.test'
     process.env.BASELINE_CLOUD_TOKEN = 't'
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'))
@@ -191,6 +199,37 @@ describe('telemetry > track + flush', () => {
 
     track({ event_type: 'change.open', project: 'p', payload: {} })
     await expect(flush()).resolves.toBeUndefined()
+
+    const retry = vi.mocked(globalThis.fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    } as any)
+    await flush()
+    expect(retry).toHaveBeenCalledTimes(2)
+  })
+
+  it('requeues failed events ahead of events tracked during delivery', async () => {
+    process.env.BASELINE_CLOUD_URL = 'https://x.test'
+    process.env.BASELINE_CLOUD_TOKEN = 't'
+    let rejectRequest: ((error: Error) => void) | undefined
+    const firstRequest = new Promise<Response>((_, reject) => {
+      rejectRequest = reject
+    })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockReturnValueOnce(firstRequest)
+
+    const { track, flush, _resetForTests } = await loadTelemetry()
+    _resetForTests()
+    track({ event_type: 'change.open', project: 'first', payload: {} })
+    const pending = flush()
+    track({ event_type: 'change.close', project: 'second', payload: {} })
+    rejectRequest?.(new Error('ECONNREFUSED'))
+    await pending
+
+    fetchSpy.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) } as any)
+    await flush()
+    const body = JSON.parse(String(fetchSpy.mock.calls[1]?.[1] && (fetchSpy.mock.calls[1]?.[1] as RequestInit).body))
+    expect(body.events.map((event: { project: string }) => event.project)).toEqual(['first', 'second'])
   })
 
   it('is a no-op when telemetry is disabled', async () => {

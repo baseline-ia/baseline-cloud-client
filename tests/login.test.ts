@@ -41,12 +41,10 @@ describe('login token issuance', () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ user: { id: '1', username: 'alice', email: 'a@test', role: 'member' } }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 201,
-        json: async () => ({ token: { id: 't1', raw: 'raw-token', prefix: 'raw', name: 'alice' } }),
+        json: async () => ({
+          user: { id: '1', username: 'alice', email: 'a@test', role: 'member' },
+          token: { id: 't1', raw: 'raw-token', prefix: 'raw', name: 'CLI' },
+        }),
       } as Response)
 
     const { login } = await import('../src/commands/login')
@@ -58,16 +56,12 @@ describe('login token issuance', () => {
       skipHookPrompt: true,
     })
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2)
-    expect(fetchSpy.mock.calls[1]?.[0]).toBe('https://cloud.test/api/v1/auth/token')
-    expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1] && (fetchSpy.mock.calls[1]?.[1] as RequestInit).body))).toEqual({
-      name: 'alice',
-      password: 'secret',
-    })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe('https://cloud.test/api/v1/auth/login')
     expect(loadConfig()).toEqual({ server_url: 'https://cloud.test', token: 'raw-token' })
   })
 
-  it('falls back without saving a token when issuance fails', async () => {
+  it('falls back without saving a token when login omits the issued token', async () => {
     const { _setHomedirForTests, _resetConfigForTests, loadConfig, getCloudConfigPath } = await import('../src/auth')
     _setHomedirForTests(tmpHome)
     _resetConfigForTests()
@@ -77,11 +71,6 @@ describe('login token issuance', () => {
         ok: true,
         status: 200,
         json: async () => ({ user: { id: '1', username: 'alice', email: 'a@test', role: 'member' } }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 403,
-        json: async () => ({ token_issue: 'Ask an administrator to issue a token.' }),
       } as Response)
 
     const warn = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -97,7 +86,7 @@ describe('login token issuance', () => {
 
     expect(loadConfig()).toBeNull()
     expect(await fs.pathExists(getCloudConfigPath())).toBe(false)
-    expect(warn.mock.calls.flat().join(' ')).toContain('Ask an administrator to issue a token.')
+    expect(warn.mock.calls.flat().join(' ')).toContain('Ask your admin to issue a token')
     expect(warn.mock.calls.flat().join(' ')).not.toContain('secret')
   })
 
