@@ -32,7 +32,7 @@
  *   loader catches and records it. The CLI continues with whatever
  *   did succeed.
  */
-import { postJson } from './api'
+import { postJson, getJson } from './api'
 import { loadConfig, saveConfig, clearConfig, tokenPrefix } from './auth'
 import type { CloudConfig } from './auth'
 import { logger } from './logger'
@@ -69,6 +69,12 @@ import { sessionTrack } from './commands/session'
 import { sddPhaseStart, sddPhaseComplete, sddPhaseRun, syncSddPhaseEvents } from './commands/sdd-phase'
 import { kiroScan } from './commands/kiro'
 import { update } from './commands/update'
+import { enrollProject } from './commands/project'
+import {
+  syncCorporateSkills,
+  statusCorporateSkills,
+  verifyCorporateSkills,
+} from './commands/skills-corporate'
 import { Command } from 'commander'
 import { resolveProjectIdentity, initProjectConfig } from './project-identity'
 
@@ -129,7 +135,7 @@ export interface TelemetryEventLike {
   timestamp?: string
 }
 
-const VERSION = '0.1.0'
+const VERSION = '0.1.5'
 
 /**
  * Build the `cloud` commander subcommand tree. Exposed for testing
@@ -211,6 +217,15 @@ export function buildProjectCommand(): Command {
     .action((opts: { slug: string; path?: string; force?: boolean }) => {
       const configPath = initProjectConfig(opts.slug, opts.path ?? process.cwd(), opts.force)
       logger.success(`Project config written to ${configPath}`)
+    })
+  project
+    .command('enroll')
+    .description('Enroll the current project in baseline-cloud')
+    .option('--slug <slug>', 'Project slug (defaults to repo-local identity)')
+    .option('--name <name>', 'Project display name (defaults to the slug)')
+    .option('--path <directory>', 'Project directory (defaults to cwd)')
+    .action(async (opts: { slug?: string; name?: string; path?: string }) => {
+      await enrollProject(opts)
     })
   return project
 }
@@ -340,6 +355,29 @@ export function buildSkillCommand(): Command {
     })
 
   return skill
+}
+
+/** Build the corporate, immutable skills command tree. */
+export function buildCorporateSkillsCommand(): Command {
+  const skills = new Command('skills').description('Manage corporate skills')
+  skills
+    .command('sync')
+    .description('Download assigned corporate skills')
+    .option('--project <path-or-name>', 'Project path or stable project name (defaults to cwd)')
+    .action(async (opts: { project?: string }) => syncCorporateSkills(opts))
+  skills
+    .command('status')
+    .description('Compare installed corporate skills with the cloud')
+    .option('--project <path-or-name>', 'Project path or stable project name (defaults to cwd)')
+    .action(async (opts: { project?: string }) => statusCorporateSkills(opts))
+  skills
+    .command('verify')
+    .description('Verify corporate skill integrity')
+    .option('--project <path-or-name>', 'Project path or stable project name (defaults to cwd)')
+    .action(async (opts: { project?: string }) => {
+      if (!(await verifyCorporateSkills(opts))) process.exitCode = 1
+    })
+  return skills
 }
 
 /**
@@ -489,6 +527,12 @@ export default async function registerImpl(ctx: PluginContext): Promise<AddonMan
     logRegistrationError('skill', err)
   }
 
+  try {
+    ctx.registerCommand(buildCorporateSkillsCommand())
+  } catch (err) {
+    logRegistrationError('skills', err)
+  }
+
   // Session token tracking subcommand
   try {
     ctx.registerCommand(buildSessionCommand())
@@ -623,6 +667,7 @@ export {
   fireCommitEvent,
   // api
   postJson,
+  getJson,
   // commands (also exposed for programmatic use)
   login,
   logout,
@@ -637,6 +682,9 @@ export {
   hooksFireCommit,
   // skill tracking
   skillTrack,
+  syncCorporateSkills,
+  statusCorporateSkills,
+  verifyCorporateSkills,
   // SDD phase timing
   sddPhaseStart,
   sddPhaseComplete,

@@ -99,4 +99,13 @@ describe('api > getJson', () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('timeout'))
     await expect(getJson('https://x.test/v1/items')).rejects.toThrow('timeout')
   })
+
+  it('passes an abort signal when a timeout is requested', async () => {
+    const mockRes = { ok: true, status: 200, json: vi.fn().mockResolvedValue({}) }
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockRes as any)
+
+    await getJson('https://x.test/v1/items', {}, { timeoutMs: 5000 })
+
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ signal: expect.any(AbortSignal) }))
+  })
 })

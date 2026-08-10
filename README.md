@@ -93,6 +93,23 @@ The command runs `npm install --global @baseline-ia/baseline-cloud-client@latest
 
 `baseline-cloud setup` installs the reusable `baseline-cloud-workflow` skill into the detected project's `.claude/skills` and `.opencode/skills` locations without replacing existing files. Kiro receives the same guidance in its managed steering block, which is appended only when missing. The skill teaches supported agents to resolve `.baseline/project.json`, wrap SDD timing, and sync queued telemetry without interrupting user work. Re-running setup is safe and idempotent.
 
+### Corporate skills
+
+Corporate skills are assigned to an enrolled project by baseline-cloud and can be synchronized locally:
+
+```bash
+baseline-cloud skills sync
+baseline-cloud skills status
+baseline-cloud skills verify
+baseline-cloud skills verify --project /path/to/project
+```
+
+`skills sync` requires cloud credentials and the stable project identity from `.baseline/project.json` (or the project option). It calls the corporate-skills APIs, verifies each SHA-256 hash before writing, and stores canonical files at `~/.baseline/skills/<slug>/<version>/SKILL.md` with a generated `manifest.json`. The lock is `~/.baseline/skills/lock.json`; its `skills` object is keyed by slug and records the skill id, version, hash, installation time, fail-closed policy, and logical canonical path.
+
+Canonical files and copies under `.claude/skills/<slug>/` and `.opencode/skills/<slug>/` are read-only (`0444`). Corporate copies take precedence over editable local copies at those managed paths. `setup` warns when they already exist, and a later `skills sync` may replace them atomically only as part of a verified update; manual edits are not a supported override.
+
+`skills verify` checks the local content and manifest against the lock and is suitable for CI. Skills with `fail_closed: true` also require online verification; use `BASELINE_CLOUD_URL` and `BASELINE_CLOUD_TOKEN` in CI or a saved cloud login. The server must provide `GET /api/v1/skills?project=<slug>`, `GET /api/v1/skills/<slug>/verify?project=<slug>`, and project enrollment responses with `assigned_skills` for automatic post-enrollment sync.
+
 ## Telemetry
 
 Telemetry is sent only when cloud credentials are available. Opt out for a process or CI job with:

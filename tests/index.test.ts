@@ -104,11 +104,13 @@ describe('addon > buildTelemetryCommand', () => {
 })
 
 describe('addon > buildProjectCommand', () => {
-  it('registers project init with slug, path, and force options', () => {
+  it('registers project init and enroll commands', () => {
     const cmd = buildProjectCommand()
-    expect(cmd.commands.map((c) => c.name())).toEqual(['init'])
+    expect(cmd.commands.map((c) => c.name())).toEqual(['init', 'enroll'])
     const init = cmd.commands[0]!
     expect(init.options.map((o) => o.long)).toEqual(expect.arrayContaining(['--slug', '--path', '--force']))
+    const enroll = cmd.commands[1]!
+    expect(enroll.options.map((o) => o.long)).toEqual(expect.arrayContaining(['--slug', '--path', '--name']))
   })
 })
 
@@ -133,11 +135,11 @@ describe('addon > register', () => {
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+/)
   })
 
-  it('registers ten subcommands including update and project identity management', async () => {
+  it('registers eleven subcommands including corporate skills management', async () => {
     const ctx = makePluginContext()
     await register(ctx)
     const names = ctx.registeredCommands.map((c) => c.name()).sort()
-    expect(names).toEqual(['cloud', 'hooks', 'kiro', 'openspec', 'project', 'sdd', 'session', 'skill', 'telemetry', 'update'])
+    expect(names).toEqual(['cloud', 'hooks', 'kiro', 'openspec', 'project', 'sdd', 'session', 'skill', 'skills', 'telemetry', 'update'])
   })
 
   it('registers at least one telemetry handler', async () => {

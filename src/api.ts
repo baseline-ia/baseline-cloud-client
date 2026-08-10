@@ -22,6 +22,11 @@ export interface JsonResponse<T = unknown> {
   ok: boolean
 }
 
+export interface JsonRequestOptions {
+  timeoutMs?: number
+  signal?: AbortSignal
+}
+
 /**
  * POST a JSON body and parse the JSON response (if any).
  *
@@ -59,10 +64,24 @@ export async function postJson<T = unknown>(
  */
 export async function getJson<T = unknown>(
   url: string,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  options: JsonRequestOptions = {}
 ): Promise<JsonResponse<T>> {
-  const res = await fetch(url, { method: 'GET', headers })
-  return parseResponse<T>(res)
+  const controller = options.timeoutMs === undefined ? null : new AbortController()
+  const timer = controller ? setTimeout(() => controller.abort(), options.timeoutMs) : null
+  const abort = () => controller?.abort()
+  options.signal?.addEventListener('abort', abort, { once: true })
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers,
+      ...(controller ? { signal: controller.signal } : options.signal ? { signal: options.signal } : {}),
+    })
+    return parseResponse<T>(res)
+  } finally {
+    if (timer) clearTimeout(timer)
+    options.signal?.removeEventListener('abort', abort)
+  }
 }
 
 async function parseResponse<T>(res: Response): Promise<JsonResponse<T>> {

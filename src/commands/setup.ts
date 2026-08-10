@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { logger } from '../logger'
+import { warnCorporateSkillDrift } from './skills-corporate'
 
 interface ToolStatus {
   name: string
@@ -321,6 +322,8 @@ export async function setup(): Promise<void> {
 
     results.push(status)
   }
+
+  warnCorporateSkillDrift(process.cwd())
 
   logger.title('Detection summary')
   for (const r of results) {
