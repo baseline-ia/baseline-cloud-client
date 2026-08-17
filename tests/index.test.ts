@@ -2,24 +2,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { Command } from 'commander'
 import {
   buildCloudCommand,
-  buildOpenspecCommand,
-  buildHooksCommand,
-  buildSddCommand,
-  buildTelemetryCommand,
+  buildKiroCommand,
   buildProjectCommand,
   buildUpdateCommand,
   register,
   type PluginContext,
   type TelemetryEventLike,
 } from '../src/index'
-
-// In-process tests for the addon's public surface.
-//
-// We don't load the addon via `await import('@baseline-ia/baseline-cloud-client')`
-// (the loader's path); instead, we import the source directly and
-// exercise the register() function with a fake plugin context. This
-// is the same code path the loader runs, just without the dynamic
-// import indirection.
 
 let capturedTelemetryHandlers: Array<(event: TelemetryEventLike) => void | Promise<void>> = []
 
@@ -61,7 +50,6 @@ describe('addon > buildCloudCommand', () => {
   it('login subcommand has the expected options', () => {
     const cmd = buildCloudCommand()
     const login = cmd.commands.find((c) => c.name() === 'login')!
-    // commander stores options on the Command
     const optionFlags = login.options.map((o) => o.long ?? o.short).filter(Boolean)
     expect(optionFlags).toContain('--server')
     expect(optionFlags).toContain('--username')
@@ -69,37 +57,19 @@ describe('addon > buildCloudCommand', () => {
   })
 })
 
-describe('addon > buildOpenspecCommand', () => {
-  it('builds a Command named "openspec" with new, list, close, sync subcommands', () => {
-    const cmd = buildOpenspecCommand()
-    expect(cmd.name()).toBe('openspec')
+describe('addon > buildKiroCommand', () => {
+  it('builds a Command named "kiro" with scan subcommand', () => {
+    const cmd = buildKiroCommand()
+    expect(cmd.name()).toBe('kiro')
     const subNames = cmd.commands.map((c) => c.name())
-    expect(subNames.sort()).toEqual(['close', 'list', 'new', 'sync'])
+    expect(subNames).toEqual(['scan', 'sync', 'watch'])
   })
-})
 
-describe('addon > buildHooksCommand', () => {
-  it('builds a Command named "hooks" with install, uninstall, status, fire-commit subcommands', () => {
-    const cmd = buildHooksCommand()
-    expect(cmd.name()).toBe('hooks')
-    const subNames = cmd.commands.map((c) => c.name())
-    expect(subNames.sort()).toEqual(['fire-commit', 'install', 'status', 'uninstall'])
-  })
-})
-
-describe('addon > buildSddCommand', () => {
-  it('builds phase start and complete subcommands', () => {
-    const cmd = buildSddCommand()
-    expect(cmd.name()).toBe('sdd')
-    const phase = cmd.commands.find((c) => c.name() === 'phase')!
-    expect(phase.commands.map((c) => c.name()).sort()).toEqual(['complete', 'run', 'start'])
-  })
-})
-
-describe('addon > buildTelemetryCommand', () => {
-  it('registers telemetry sync', () => {
-    const cmd = buildTelemetryCommand()
-    expect(cmd.commands.map((c) => c.name())).toEqual(['sync'])
+  it('scan subcommand has --dry-run option', () => {
+    const cmd = buildKiroCommand()
+    const scan = cmd.commands.find((c) => c.name() === 'scan')!
+    const optionFlags = scan.options.map((o) => o.long ?? o.short).filter(Boolean)
+    expect(optionFlags).toContain('--dry-run')
   })
 })
 
@@ -115,7 +85,7 @@ describe('addon > buildProjectCommand', () => {
 })
 
 describe('addon > buildUpdateCommand', () => {
-  it('registers the update command with no recursive setup option', () => {
+  it('registers the update command with no subcommands or options', () => {
     const cmd = buildUpdateCommand()
     expect(cmd.name()).toBe('update')
     expect(cmd.commands).toHaveLength(0)
@@ -135,11 +105,11 @@ describe('addon > register', () => {
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+/)
   })
 
-  it('registers eleven subcommands including corporate skills management', async () => {
+  it('registers cloud, kiro, project, and update subcommands', async () => {
     const ctx = makePluginContext()
     await register(ctx)
     const names = ctx.registeredCommands.map((c) => c.name()).sort()
-    expect(names).toEqual(['cloud', 'hooks', 'kiro', 'openspec', 'project', 'sdd', 'session', 'skill', 'skills', 'telemetry', 'update'])
+    expect(names).toEqual(['cloud', 'kiro', 'project', 'update'])
   })
 
   it('registers at least one telemetry handler', async () => {
@@ -153,8 +123,6 @@ describe('addon > register', () => {
     await register(ctx)
     const handler = capturedTelemetryHandlers[0]!
 
-    // Spy on the addon's track by mocking the global fetch that
-    // track() uses to flush.
     process.env.BASELINE_CLOUD_URL = 'https://x.test'
     process.env.BASELINE_CLOUD_TOKEN = 't'
     const fetchSpy = vi
@@ -162,7 +130,6 @@ describe('addon > register', () => {
       .mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as any)
 
     await handler({ event_type: 'cli.install', project: 'p', payload: { foo: 'bar' } })
-    // Force a flush so the queue is sent
     const { flush } = await import('../src/telemetry')
     await flush()
 
@@ -178,18 +145,11 @@ describe('addon > register', () => {
 })
 
 describe('addon > public re-exports', () => {
-  it('re-exports login, logout, openspec, hooks commands', async () => {
+  it('re-exports login, logout, and kiroScan', async () => {
     const mod = await import('../src/index')
     expect(typeof mod.login).toBe('function')
     expect(typeof mod.logout).toBe('function')
-    expect(typeof mod.openspecNew).toBe('function')
-    expect(typeof mod.openspecList).toBe('function')
-    expect(typeof mod.openspecClose).toBe('function')
-    expect(typeof mod.openspecSync).toBe('function')
-    expect(typeof mod.hooksInstall).toBe('function')
-    expect(typeof mod.hooksUninstall).toBe('function')
-    expect(typeof mod.hooksStatus).toBe('function')
-    expect(typeof mod.hooksFireCommit).toBe('function')
+    expect(typeof mod.kiroScan).toBe('function')
   })
 
   it('re-exports auth helpers', async () => {

@@ -3,7 +3,8 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { logger } from '../logger'
-import { warnCorporateSkillDrift } from './skills-corporate'
+import { installKiroWatcher } from '../kiro-watcher'
+import { syncSkills } from '../skills-sync'
 
 interface ToolStatus {
   name: string
@@ -191,8 +192,6 @@ When the user sends a message that starts with \`/skill-name\` (e.g. \`/sdd-new\
    baseline-cloud skill track --name <skill-name> --project <current-workspace-dir>
    \`\`\`
 
-For credit/session tracking, run \`baseline-cloud kiro scan\` once at the start of your first turn in a new session.
-
 ${KIRO_WORKFLOW_CONTENT}
 `
 
@@ -237,7 +236,6 @@ function setupKiroSteering(): boolean {
     logger.dim('  · permissions.yaml not found — shell permission not added')
   }
 
-  logger.dim('  · Run `baseline-cloud kiro scan` to report credit usage from past sessions')
   return true
 }
 
@@ -311,6 +309,7 @@ export async function setup(): Promise<void> {
       } else if ((tool.id === 'kiro' || tool.id === 'kiro-cli') && !kiroConfigured) {
         logger.title('Kiro')
         status.configuredHooks = setupKiroSteering()
+        installKiroWatcher()
         kiroConfigured = true
       } else if ((tool.id === 'kiro' || tool.id === 'kiro-cli') && kiroConfigured) {
         status.configuredHooks = true
@@ -322,8 +321,6 @@ export async function setup(): Promise<void> {
 
     results.push(status)
   }
-
-  warnCorporateSkillDrift(process.cwd())
 
   logger.title('Detection summary')
   for (const r of results) {
@@ -339,7 +336,18 @@ export async function setup(): Promise<void> {
     }
   }
 
+  // Auto-sync corporate skills if already authenticated.
+  logger.title('Corporate skills')
+  const skillSync = await syncSkills({ verbose: true })
+  if (skillSync.error) {
+    logger.dim(`  · ${skillSync.error}`)
+    logger.dim('  · Run `baseline-cloud kiro sync` after logging in.')
+  } else {
+    logger.success(`  ✓ ${skillSync.written} skill(s) synced to ~/.kiro/steering/`)
+  }
+
   logger.title('Next steps')
   logger.info('  Run `baseline-cloud cloud login` if you haven\'t already.')
+  logger.info('  Run `baseline-cloud kiro sync` to update corporate skills at any time.')
   logger.dim('  Hooks fire automatically from now on — no restart needed.')
 }

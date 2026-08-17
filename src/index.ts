@@ -1,37 +1,3 @@
-/**
- * @baseline-ia/baseline-cloud-client — addon entry point.
- *
- * The baseline CLI's loader imports `@baseline-ia/baseline-cloud-client`
- * at startup
- * and calls this default export with a plugin context.
- *
- * This file has THREE responsibilities:
- *
- *   1. Register the addon's manifest (name + version) with the
- *      loader so `baseline status --plugins` can show what loaded.
- *
- *   2. Re-export the public API (login, logout, telemetry, etc.) so
- *      it can be imported programmatically (e.g., by tests or by
- *      other addons that want to extend the cloud integration).
- *
- *   3. WIRE UP THE COMMANDS. The default export is the
- *      addon's `register(ctx)` function. It uses
- *      `ctx.registerCommand(...)` to attach each cloud command
- *      to the host CLI's program, and `ctx.onTelemetry(...)` to
- *      subscribe to the host's `cli.*` events so we can forward
- *      them to the cloud.
- *
- * Why register from the default export (not at module top-level)?
- *   The ctx is passed in by the loader. The register function is the
- *   standard plugin pattern; it's what lets us test the addon in
- *   isolation and gives the host a chance to inspect what the addon
- *   registered before parsing argv.
- *
- * Failure isolation:
- *   If any individual registerCommand/onTelemetry call throws, the
- *   loader catches and records it. The CLI continues with whatever
- *   did succeed.
- */
 import { postJson, getJson } from './api'
 import { loadConfig, saveConfig, clearConfig, tokenPrefix } from './auth'
 import type { CloudConfig } from './auth'
@@ -50,56 +16,17 @@ import {
   _resetForTests as _telemetryReset,
 } from './telemetry'
 import type { EventType, WorkType, EventPayload } from './telemetry'
-import { syncOpenspecChanges, readProposalFrontmatter } from './openspec-tracker'
-import {
-  installHook,
-  uninstallHook,
-  hookStatus,
-  isHookInstalled,
-  isInsideGitRepo,
-  fireCommitEvent,
-} from './git-hooks'
 import { login } from './commands/login'
 import { logout } from './commands/logout'
 import { statusCloud } from './commands/status-cloud'
-import { openspecNew, openspecList, openspecClose, openspecSync } from './commands/openspec'
-import { hooksInstall, hooksUninstall, hooksStatus, hooksFireCommit } from './commands/hooks'
-import { skillTrack } from './commands/skill'
-import { sessionTrack } from './commands/session'
-import { sddPhaseStart, sddPhaseComplete, sddPhaseRun, syncSddPhaseEvents } from './commands/sdd-phase'
 import { kiroScan } from './commands/kiro'
+import { installKiroWatcher, uninstallKiroWatcher, watcherStatus } from './kiro-watcher'
+import { syncSkills } from './skills-sync'
 import { update } from './commands/update'
 import { enrollProject } from './commands/project'
-import {
-  syncCorporateSkills,
-  statusCorporateSkills,
-  verifyCorporateSkills,
-} from './commands/skills-corporate'
 import { Command } from 'commander'
 import { resolveProjectIdentity, initProjectConfig } from './project-identity'
 
-/**
- * Local copies of the plugin API types from
- * the host CLI's plugin API. We re-declare them here
- * (rather than importing) because:
- *
- *   1. The addon's tsup build needs the type declarations to be
- *      present at build time. Importing the host's plugins module
- *      requires the host CLI package to be linked in development
- *      workspace, which is the user-flow we want but not the
- *      developer-flow for a fresh `git clone` of the addon.
- *
- *   2. The plugin API contract is small (5 fields on PluginContext,
- *      2 fields on AddonManifest). Re-declaring keeps the addon
- *      self-contained and easy to publish independently of the host.
- *
- *   3. The shapes here MUST match
- *      `ams-base-ai/src/plugins.ts#PluginContext` and
- *      `ams-base-ai/src/loader.ts#AddonManifest`. Any drift is
- *      caught by the e2e test in WU 5 (next chained PR), which
- *      loads the real addon against a real host and asserts the
- *      contract.
- */
 export interface PluginContext {
   name: string
   version: string
@@ -108,18 +35,7 @@ export interface PluginContext {
   onTelemetry: (handler: (event: TelemetryEventLike) => void | Promise<void>) => void
   getConfig: <T = unknown>(key: string) => Promise<T | null>
   setConfig: <T = unknown>(key: string, value: T) => Promise<void>
-  /**
-   * Check whether telemetry is currently enabled globally. Returns
-   * false when the host's --no-telemetry flag was passed, or
-   * BASELINE_TELEMETRY=0/false is set. Optional: addons that don't
-   * care about this can ignore it (the host's emitTelemetry already
-   * short-circuits when telemetry is off, so the handler won't fire).
-   */
   isTelemetryEnabled?: () => boolean
-  /**
-   * Enable or disable telemetry globally. Used by the host CLI to
-   * implement the --no-telemetry flag. Optional.
-   */
   setTelemetryEnabled?: (enabled: boolean) => void
 }
 
@@ -137,14 +53,9 @@ export interface TelemetryEventLike {
 
 const VERSION = '0.1.5'
 
-/**
- * Build the `cloud` commander subcommand tree. Exposed for testing
- * (so tests can call `program.parse(['node', 'test', ...])` on a
- * real program with the cloud commands attached).
- */
 export function buildCloudCommand(): Command {
   const cloud = new Command('cloud').description(
-    'baseline-cloud integration (login, status, flush, plugins)'
+    'baseline-cloud integration (login, status, flush)'
   )
 
   cloud
@@ -155,7 +66,6 @@ export function buildCloudCommand(): Command {
     .option('--token <raw>', 'Raw bearer token (skips username/password flow)')
     .option('--username <name>', 'Username (overrides BASELINE_CLOUD_USERNAME)')
     .option('--password <pwd>', 'Password (overrides BASELINE_CLOUD_PASSWORD)')
-    .option('--skip-hook-prompt', 'Do not prompt to install the post-commit git hook')
     .action(async (opts: any) => {
       await login({
         noInput: opts.input === false,
@@ -163,7 +73,6 @@ export function buildCloudCommand(): Command {
         token: opts.token,
         username: opts.username,
         password: opts.password,
-        skipHookPrompt: opts.skipHookPrompt,
       })
     })
 
@@ -192,20 +101,6 @@ export function buildCloudCommand(): Command {
   return cloud
 }
 
-/** Build the durable telemetry recovery command tree. */
-export function buildTelemetryCommand(): Command {
-  const telemetry = new Command('telemetry').description('Manage durable telemetry delivery')
-  telemetry
-    .command('sync')
-    .description('Replay pending SDD events after login')
-    .action(async () => {
-      const delivered = await syncSddPhaseEvents()
-      logger.success(`✓ Replayed ${delivered} pending SDD event${delivered === 1 ? '' : 's'}.`)
-    })
-  return telemetry
-}
-
-/** Build the repo-local project identity command tree. */
 export function buildProjectCommand(): Command {
   const project = new Command('project').description('Manage repo-local project identity')
   project
@@ -230,7 +125,6 @@ export function buildProjectCommand(): Command {
   return project
 }
 
-/** Build the global package update command. */
 export function buildUpdateCommand(): Command {
   return new Command('update')
     .description('Update the globally installed package and refresh AI integrations')
@@ -245,220 +139,9 @@ export function buildUpdateCommand(): Command {
     })
 }
 
-/**
- * Build the `openspec` commander subcommand tree.
- */
-export function buildOpenspecCommand(): Command {
-  const openspec = new Command('openspec').description(
-    'Manage OpenSpec changes and track their lifecycle'
-  )
-
-  openspec
-    .command('new <name>')
-    .description('Create a new OpenSpec change directory with a proposal scaffold and fire change.open')
-    .option(
-      '-t, --type <type>',
-      'Work type: feature | migration | new-project | chore | fix | refactor | docs',
-      'feature'
-    )
-    .option(
-      '-e, --estimate <value>',
-      'Estimated time WITHOUT baseline: small|medium|large|xlarge OR 240 (min) OR 4h OR 4h30m'
-    )
-    .action(async (name: string, opts: { type?: string; estimate?: string }) => {
-      await openspecNew(name, { type: opts.type, estimate: opts.estimate })
-    })
-
-  openspec
-    .command('list')
-    .description('List active and archived OpenSpec changes in the current project')
-    .action(async () => {
-      await openspecList()
-    })
-
-  openspec
-    .command('close <name>')
-    .description('Archive an OpenSpec change (moves to openspec/changes/archive/) and fire change.close')
-    .action(async (name: string) => {
-      await openspecClose(name)
-    })
-
-  openspec
-    .command('sync')
-    .description('Scan for new/closed OpenSpec changes and fire the corresponding events')
-    .action(() => {
-      openspecSync()
-    })
-
-  return openspec
-}
-
-/**
- * Build the `hooks` commander subcommand tree.
- */
-export function buildHooksCommand(): Command {
-  const hooks = new Command('hooks').description(
-    'Manage the post-commit git hook (auto-fires change.commit)'
-  )
-
-  hooks
-    .command('install')
-    .description('Install the post-commit hook in the current git repository')
-    .action(() => hooksInstall())
-
-  hooks
-    .command('uninstall')
-    .description('Remove the post-commit hook from the current git repository')
-    .action(() => hooksUninstall())
-
-  hooks
-    .command('status')
-    .description('Show whether the post-commit hook is installed')
-    .action(() => hooksStatus())
-
-  hooks
-    .command('fire-commit')
-    .description('(Internal) Fire a change.commit event — called by the post-commit hook')
-    .option('--change-name <name>', 'Change name (if commit touched openspec/changes/<name>/)')
-    .option('--sha <sha>', 'Full commit SHA')
-    .option('--short-sha <shortSha>', 'Short commit SHA')
-    .option('--message <message>', 'Commit message')
-    .option('--files-changed <n>', 'Number of files changed')
-    .option('--lines-added <n>', 'Lines added')
-    .option('--lines-removed <n>', 'Lines removed')
-    .option('--author-email <email>', 'Author email')
-    .action((opts: any) => hooksFireCommit(opts))
-
-  return hooks
-}
-
-/**
- * Build the `skill` commander subcommand tree.
- */
-export function buildSkillCommand(): Command {
-  const skill = new Command('skill').description(
-    'Track skill usage events for dashboard analytics'
-  )
-
-  skill
-    .command('track')
-    .description('(Internal) Fire a skill.used event — called by the Claude Code hook')
-    .requiredOption('--name <name>', 'Skill name (e.g. sdd-new, sdd-apply)')
-    .option('--project <path>', 'Project directory path (defaults to cwd)')
-    .option('--duration-ms <ms>', 'Time the skill took to respond (ms)')
-    .action(async (opts: { name: string; project?: string; durationMs?: string }) => {
-      await skillTrack({
-        name: opts.name,
-        project: opts.project ?? process.cwd(),
-        durationMs: opts.durationMs !== undefined ? Number(opts.durationMs) : undefined,
-      })
-    })
-
-  return skill
-}
-
-/** Build the corporate, immutable skills command tree. */
-export function buildCorporateSkillsCommand(): Command {
-  const skills = new Command('skills').description('Manage corporate skills')
-  skills
-    .command('sync')
-    .description('Download assigned corporate skills')
-    .option('--project <path-or-name>', 'Project path or stable project name (defaults to cwd)')
-    .action(async (opts: { project?: string }) => syncCorporateSkills(opts))
-  skills
-    .command('status')
-    .description('Compare installed corporate skills with the cloud')
-    .option('--project <path-or-name>', 'Project path or stable project name (defaults to cwd)')
-    .action(async (opts: { project?: string }) => statusCorporateSkills(opts))
-  skills
-    .command('verify')
-    .description('Verify corporate skill integrity')
-    .option('--project <path-or-name>', 'Project path or stable project name (defaults to cwd)')
-    .action(async (opts: { project?: string }) => {
-      if (!(await verifyCorporateSkills(opts))) process.exitCode = 1
-    })
-  return skills
-}
-
-/**
- * Build the `session` commander subcommand tree.
- */
-export function buildSessionCommand(): Command {
-  const session = new Command('session').description(
-    'Track session-level token usage and cost'
-  )
-
-  session
-    .command('track')
-    .description('(Internal) Aggregate token usage from a session transcript and fire session.tokens')
-    .option('--transcript <path>', 'Path to the Claude Code session JSONL file')
-    .option('--session-id <id>', 'Session ID')
-    .option('--project <path>', 'Project directory path (defaults to cwd)')
-    .option('--input-tokens <n>', 'Input tokens (if not using --transcript)')
-    .option('--output-tokens <n>', 'Output tokens (if not using --transcript)')
-    .option('--cache-read-tokens <n>', 'Cache read tokens')
-    .option('--cache-write-tokens <n>', 'Cache write tokens')
-    .action(async (opts: any) => {
-      await sessionTrack({
-        transcriptPath: opts.transcript,
-        sessionId: opts.sessionId,
-        project: opts.project ?? process.cwd(),
-        inputTokens: opts.inputTokens !== undefined ? Number(opts.inputTokens) : undefined,
-        outputTokens: opts.outputTokens !== undefined ? Number(opts.outputTokens) : undefined,
-        cacheReadTokens: opts.cacheReadTokens !== undefined ? Number(opts.cacheReadTokens) : undefined,
-        cacheWriteTokens: opts.cacheWriteTokens !== undefined ? Number(opts.cacheWriteTokens) : undefined,
-      })
-    })
-
-  return session
-}
-
-/** Build the explicit SDD phase timing command tree. */
-export function buildSddCommand(): Command {
-  const sdd = new Command('sdd').description('Track SDD phase timing')
-  const phase = sdd.command('phase').description('Track the start and completion of an SDD phase')
-
-  phase
-    .command('start')
-    .description('Start timing an SDD phase')
-    .requiredOption('--phase <phase>', 'SDD phase: explore|propose|spec|design|tasks|apply|verify|archive')
-    .requiredOption('--change <change>', 'Change identifier')
-    .option('--project <path-or-name>', 'Project path or stable project name (defaults to cwd)')
-    .action(async (opts: { phase: string; change: string; project?: string }) => {
-      await sddPhaseStart(opts)
-    })
-
-  phase
-    .command('complete')
-    .description('Complete timing an SDD phase')
-    .requiredOption('--phase <phase>', 'SDD phase: explore|propose|spec|design|tasks|apply|verify|archive')
-    .requiredOption('--change <change>', 'Change identifier')
-    .option('--project <path-or-name>', 'Project path or stable project name (defaults to cwd)')
-    .action(async (opts: { phase: string; change: string; project?: string }) => {
-      await sddPhaseComplete(opts)
-    })
-
-  phase
-    .command('run <command> [args...]')
-    .description('Run a command while timing an SDD phase')
-    .requiredOption('--phase <phase>', 'SDD phase: explore|propose|spec|design|tasks|apply|verify|archive')
-    .requiredOption('--change <change>', 'Change identifier')
-    .option('--project <path-or-name>', 'Project path or stable project name (defaults to cwd)')
-    .allowUnknownOption()
-    .action(async (command: string, args: string[], opts: { phase: string; change: string; project?: string }) => {
-      const exitCode = await sddPhaseRun({ ...opts, command, args })
-      if (exitCode !== 0) process.exitCode = exitCode
-    })
-
-  return sdd
-}
-
-/**
- * Build the `kiro` commander subcommand tree.
- */
 export function buildKiroCommand(): Command {
   const kiro = new Command('kiro').description(
-    'Kiro IDE integration — scan sessions and track credit usage'
+    'Kiro integration — scan sessions and track credit usage'
   )
 
   kiro
@@ -469,29 +152,45 @@ export function buildKiroCommand(): Command {
       await kiroScan({ dryRun: opts.dryRun })
     })
 
+  kiro
+    .command('sync')
+    .description('Download corporate skills from baseline-cloud and write them to ~/.kiro/steering/')
+    .option('--project <slug>', 'Project slug (defaults to current directory)')
+    .option('--verbose', 'Show each file written')
+    .action(async (opts: { project?: string; verbose?: boolean }) => {
+      logger.info('Syncing corporate skills…')
+      const result = await syncSkills({ project: opts.project, verbose: opts.verbose })
+      if (result.error) {
+        logger.error(`  ✗ ${result.error}`)
+        process.exit(1)
+      }
+      logger.success(`  ✓ ${result.written} skill(s) written, ${result.removed} removed`)
+    })
+
+  const watch = kiro.command('watch').description('Manage the background Kiro session scanner')
+
+  watch
+    .command('install')
+    .description('Install the background scanner (launchd on macOS, cron on Linux)')
+    .action(() => { installKiroWatcher() })
+
+  watch
+    .command('uninstall')
+    .description('Remove the background scanner')
+    .action(() => { uninstallKiroWatcher() })
+
+  watch
+    .command('status')
+    .description('Show whether the background scanner is installed')
+    .action(() => {
+      const { installed, method } = watcherStatus()
+      if (installed) logger.success(`✓ Background scanner active (${method})`)
+      else logger.dim('  · Background scanner not installed — run: baseline-cloud kiro watch install')
+    })
+
   return kiro
 }
 
-/**
- * The default export is the loader's contract. The host CLI does
- * `const addon = (await import('@baseline-ia/baseline-cloud-client')).default`
- * and calls it with a plugin context.
- *
- * We register four things in this function:
- *
- *   1. The `cloud` subcommand (login, logout, status, flush).
- *   2. The `openspec` subcommand (new, list, close, sync).
- *   3. The `hooks` subcommand (install, uninstall, status, fire-commit).
- *   4. A telemetry handler that forwards every `cli.*` event from the
- *      host CLI to the configured cloud server.
- *
- * All registrations are best-effort: if one throws, the loader
- * catches and records it. The other registrations still run.
- */
-// Also export the register function under its name (in addition to
-// being the default export) so consumers can do:
-//   import { register } from '@baseline-ia/baseline-cloud-client'
-// without needing the default-import dance.
 export async function register(ctx: PluginContext): Promise<AddonManifest> {
   return registerImpl(ctx)
 }
@@ -499,123 +198,44 @@ export async function register(ctx: PluginContext): Promise<AddonManifest> {
 export default async function registerImpl(ctx: PluginContext): Promise<AddonManifest> {
   setCliVersion(ctx.version)
 
-  // Cloud subcommand
   try {
     ctx.registerCommand(buildCloudCommand())
   } catch (err) {
     logRegistrationError('cloud', err)
   }
 
-  // OpenSpec subcommand
-  try {
-    ctx.registerCommand(buildOpenspecCommand())
-  } catch (err) {
-    logRegistrationError('openspec', err)
-  }
-
-  // Hooks subcommand
-  try {
-    ctx.registerCommand(buildHooksCommand())
-  } catch (err) {
-    logRegistrationError('hooks', err)
-  }
-
-  // Skill tracking subcommand
-  try {
-    ctx.registerCommand(buildSkillCommand())
-  } catch (err) {
-    logRegistrationError('skill', err)
-  }
-
-  try {
-    ctx.registerCommand(buildCorporateSkillsCommand())
-  } catch (err) {
-    logRegistrationError('skills', err)
-  }
-
-  // Session token tracking subcommand
-  try {
-    ctx.registerCommand(buildSessionCommand())
-  } catch (err) {
-    logRegistrationError('session', err)
-  }
-
-  // Kiro session scan subcommand
   try {
     ctx.registerCommand(buildKiroCommand())
   } catch (err) {
     logRegistrationError('kiro', err)
   }
 
-  // Explicit SDD phase timing subcommand
-  try {
-    ctx.registerCommand(buildSddCommand())
-  } catch (err) {
-    logRegistrationError('sdd', err)
-  }
-
-  // Durable telemetry recovery subcommand
-  try {
-    ctx.registerCommand(buildTelemetryCommand())
-  } catch (err) {
-    logRegistrationError('telemetry', err)
-  }
-
-  // Repo-local project identity command
   try {
     ctx.registerCommand(buildProjectCommand())
   } catch (err) {
     logRegistrationError('project', err)
   }
 
-  // Global package update and integration refresh
   try {
     ctx.registerCommand(buildUpdateCommand())
   } catch (err) {
     logRegistrationError('update', err)
   }
 
-  // Telemetry forwarder. Every event the host CLI emits (cli.install,
-  // cli.update, etc.) is forwarded to the cloud via the addon's own
-  // track function. The host's `emitTelemetry` is the upstream
-  // contract; the addon's `track` is the downstream sink.
-  //
-  // Two safety nets ensure the addon never sends events when it
-  // shouldn't:
-  //
-  //  1. The host's emitTelemetry short-circuits if --no-telemetry or
-  //     BASELINE_TELEMETRY=0 was set, so this handler is never called.
-  //  2. The addon's track() short-circuits if its own isEnabled()
-  //     returns false (which checks the same env vars independently).
-  //     Belt-and-suspenders in case the host's gate is bypassed.
   try {
     ctx.onTelemetry(async (event) => {
-      // Translate the host's plugin API event to the addon's
-      // telemetry format. The host emits with `event_type` (string)
-      // and `payload` (object). The addon expects the same shape.
       try {
-          track({
-            event_type: event.event_type as EventType,
-            project: event.project ? resolveProjectIdentity(event.project) : 'default',
-            payload: event.payload ?? {},
+        track({
+          event_type: event.event_type as EventType,
+          project: event.project ? resolveProjectIdentity(event.project) : 'default',
+          payload: event.payload ?? {},
         })
       } catch (err) {
-        // Swallow — the host's emitTelemetry already wraps this in
-        // a try/catch, but we belt-and-suspender here too.
         logRegistrationError('telemetry-forward', err)
       }
     })
   } catch (err) {
     logRegistrationError('onTelemetry', err)
-  }
-
-  // Best-effort: scan for openspec changes on every CLI run. This
-  // was previously called by the host's withTelemetry wrapper; the
-  // addon now takes ownership of the openspec scanning.
-  try {
-    syncOpenspecChanges(process.cwd())
-  } catch {
-    // ignore — non-git projects are fine
   }
 
   return {
@@ -626,22 +246,14 @@ export default async function registerImpl(ctx: PluginContext): Promise<AddonMan
 
 function logRegistrationError(what: string, err: unknown): void {
   const msg = err instanceof Error ? err.message : String(err)
-  // We write to stderr (not the host's logger) so the message is
-  // visible regardless of how the host CLI is configured.
   process.stderr.write(`[baseline-cloud-client] failed to register ${what}: ${msg}\n`)
 }
 
-// ---------- Public API re-exports ----------
-// These are re-exported so consumers can do:
-//   import { login, telemetry } from '@baseline-ia/baseline-cloud-client'
-
 export {
-  // auth
   loadConfig,
   saveConfig,
   clearConfig,
   tokenPrefix,
-  // telemetry
   track,
   flush,
   isEnabled,
@@ -652,48 +264,18 @@ export {
   detectTools,
   registerExitFlush,
   deliverEvents,
-  // openspec-tracker
-  syncOpenspecChanges,
-  readProposalFrontmatter,
-  // project identity
   resolveProjectIdentity,
   initProjectConfig,
-  // git-hooks
-  installHook,
-  uninstallHook,
-  hookStatus,
-  isHookInstalled,
-  isInsideGitRepo,
-  fireCommitEvent,
-  // api
   postJson,
   getJson,
-  // commands (also exposed for programmatic use)
   login,
   logout,
   statusCloud,
-  openspecNew,
-  openspecList,
-  openspecClose,
-  openspecSync,
-  hooksInstall,
-  hooksUninstall,
-  hooksStatus,
-  hooksFireCommit,
-  // skill tracking
-  skillTrack,
-  syncCorporateSkills,
-  statusCorporateSkills,
-  verifyCorporateSkills,
-  // SDD phase timing
-  sddPhaseStart,
-  sddPhaseComplete,
-  sddPhaseRun,
-  syncSddPhaseEvents,
-  // kiro integration
   kiroScan,
+  installKiroWatcher,
+  uninstallKiroWatcher,
+  watcherStatus,
   update,
-  // test helpers
   _telemetryReset,
 }
 
