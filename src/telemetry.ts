@@ -43,19 +43,12 @@ export const EVENT_TYPES = [
   'cli.onboard',
   'cli.login',
   'cli.logout',
-  'openspec.open',
-  'openspec.update',
-  'change.open',
-  'change.close',
-  'change.commit',
-  'skill.installed',
-  'skill.used',
   'engram.setup',
   'engram.update',
-  'session.tokens',
   'session.credits',
-  'sdd.phase.started',
-  'sdd.phase.completed',
+  'session.started',
+  'session.completed',
+  'session.failed',
 ] as const
 
 export type EventType = (typeof EVENT_TYPES)[number]

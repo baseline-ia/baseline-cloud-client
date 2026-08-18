@@ -9,7 +9,7 @@ import path from 'path'
 // to a mock cloud server. This exercises the FULL plugin contract:
 //
 //   1. The addon's register(ctx) is called with a real plugin context
-//   2. The addon registers cloud + openspec + hooks subcommands
+//   2. The addon registers cloud + kiro + project + update subcommands
 //   3. The addon subscribes to telemetry
 //   4. emitTelemetry is called with a cli.* event
 //   5. The addon's onTelemetry handler forwards to its own track()
@@ -98,7 +98,7 @@ function makePluginContext() {
 }
 
 describe('addon e2e > register() + emit → mock cloud', () => {
-  it('register() wires the cloud, openspec, hooks, skill, session, and kiro subcommands', async () => {
+  it('register() wires the cloud, kiro, project, and update subcommands', async () => {
     const { register } = await import('../src/index')
     const { registeredCommands } = makePluginContext()
 
@@ -116,15 +116,8 @@ describe('addon e2e > register() + emit → mock cloud', () => {
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/)
     expect(registeredCommands.map((c) => c.name()).sort()).toEqual([
       'cloud',
-      'hooks',
       'kiro',
-      'openspec',
       'project',
-      'sdd',
-      'session',
-      'skill',
-      'skills',
-      'telemetry',
       'update',
     ])
   })

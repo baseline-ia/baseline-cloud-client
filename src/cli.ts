@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
-import { buildCloudCommand, buildOpenspecCommand, buildHooksCommand, buildSkillCommand, buildCorporateSkillsCommand, buildSessionCommand, buildTelemetryCommand, buildSddCommand, buildKiroCommand, buildProjectCommand, buildUpdateCommand } from './index'
+import { buildCloudCommand, buildKiroCommand, buildProjectCommand, buildUpdateCommand } from './index'
 import { setup } from './commands/setup'
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -14,13 +14,6 @@ program
   .version(pkg.version)
 
 program.addCommand(buildCloudCommand())
-program.addCommand(buildTelemetryCommand())
-program.addCommand(buildOpenspecCommand())
-program.addCommand(buildHooksCommand())
-program.addCommand(buildSkillCommand())
-program.addCommand(buildCorporateSkillsCommand())
-program.addCommand(buildSessionCommand())
-program.addCommand(buildSddCommand())
 program.addCommand(buildKiroCommand())
 program.addCommand(buildProjectCommand())
 program.addCommand(buildUpdateCommand())

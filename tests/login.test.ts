@@ -53,7 +53,6 @@ describe('login token issuance', () => {
       serverUrl: 'https://cloud.test',
       username: 'alice',
       password: 'secret',
-      skipHookPrompt: true,
     })
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
@@ -81,7 +80,6 @@ describe('login token issuance', () => {
       serverUrl: 'https://cloud.test',
       username: 'alice',
       password: 'secret',
-      skipHookPrompt: true,
     })).rejects.toBe(exitError)
 
     expect(loadConfig()).toBeNull()
@@ -104,7 +102,7 @@ describe('login token issuance', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
 
     const { login } = await import('../src/commands/login')
-    await login({ skipHookPrompt: true })
+    await login({})
 
     expect(loadConfig()).toEqual({ server_url: 'https://cloud.test', token: 'raw-api-token' })
     const stat = await fs.stat(getCloudConfigPath())

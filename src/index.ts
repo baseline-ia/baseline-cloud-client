@@ -275,7 +275,9 @@ export {
   installKiroWatcher,
   uninstallKiroWatcher,
   watcherStatus,
+  syncSkills,
   update,
+  enrollProject,
   _telemetryReset,
 }
 

@@ -94,23 +94,21 @@ describe('project identity', () => {
     expect(() => initProjectConfig('***', directory, true)).toThrow(/Invalid project slug/)
   })
 
-  it('uses the repository identity for skill and session telemetry', async () => {
+  it('uses the repository identity for kiro telemetry events', async () => {
     process.env.BASELINE_CLOUD_URL = 'https://x.test'
     process.env.BASELINE_CLOUD_TOKEN = 'token'
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200 } as any)
     const directory = await repo('git@github.com:org/integration-project.git')
-    const { skillTrack } = await import('../src/commands/skill')
-    const { sessionTrack } = await import('../src/commands/session')
+    const { resolveProjectIdentity } = await import('../src/project-identity')
     const telemetry = await import('../src/telemetry')
     telemetry._resetForTests()
 
-    await skillTrack({ name: 'sdd-apply', project: directory })
-    await sessionTrack({ project: directory, inputTokens: 1 })
+    const project = resolveProjectIdentity(directory)
+    telemetry.track({ event_type: 'session.credits', project, payload: { tool: 'kiro', credits: 1 } })
     await telemetry.flush()
 
     const events = fetchSpy.mock.calls.flatMap((call) => JSON.parse((call[1] as any).body).events)
     expect(events.map((event: { project: string }) => event.project)).toEqual([
-      'integration-project',
       'integration-project',
     ])
   })

@@ -2,7 +2,6 @@ import { loadConfig } from '../auth'
 import { postJson } from '../api'
 import { logger } from '../logger'
 import { resolveProjectIdentity } from '../project-identity'
-import { syncCorporateSkills } from './skills-corporate'
 
 interface ProjectEnrollResponse {
   ok?: boolean
@@ -47,7 +46,4 @@ export async function enrollProject(opts: EnrollProjectOpts = {}): Promise<void>
       ? `Project already enrolled: ${response.json.project?.slug ?? project}`
       : `Project enrolled: ${response.json?.project?.slug ?? project}`,
   )
-  if (response.json?.assigned_skills && response.json.assigned_skills.length > 0) {
-    await syncCorporateSkills({ project })
-  }
 }

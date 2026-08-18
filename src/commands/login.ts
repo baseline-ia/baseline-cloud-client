@@ -1,32 +1,9 @@
-/**
- * Cloud addon command: `baseline-cloud cloud login`.
- *
- * Authenticate against a self-hosted baseline-cloud instance.
- *
- * Interactive flow:
- *   1. Prompt for server URL (default: http://localhost:3000)
- *   2. Choose username/password or an existing API token
- *   3. Authenticate with the selected method
- *   4. Save the token to ~/.baseline/cloud.json (mode 0600)
- *   5. Fire `cli.login` event
- *   6. Offer to install the post-commit hook (only inside a git repo
- *      and only if not already installed)
- *
- * Non-interactive (CI):
- *   BASELINE_CLOUD_URL=... BASELINE_CLOUD_USERNAME=... BASELINE_CLOUD_PASSWORD=... baseline-cloud cloud login --no-input
- *
- * Pre-existing-token flow:
- *   baseline-cloud cloud login --server <url> --token <raw-token>
- *   For admins who issued a token from the dashboard and want to give
- *   it directly to a machine (no password needed).
- */
 import { createInterface } from 'node:readline/promises'
 import { stdin, stdout, exit } from 'node:process'
 import { logger } from '../logger'
 import { saveConfig, tokenPrefix } from '../auth'
 import { postJson } from '../api'
 import { track, flush, envContext, detectTools, registerExitFlush } from '../telemetry'
-import { isInsideGitRepo, installHook, isHookInstalled } from '../git-hooks'
 
 interface LoginResponse {
   user: { id: string; username: string; email: string; role: 'admin' | 'member' }
@@ -50,7 +27,6 @@ interface SecretOutput {
   write: (chunk: string) => boolean
 }
 
-/** Read a secret without echoing it when both streams are interactive TTYs. */
 export function readSecret(
   prompt: string,
   rl: Awaited<ReturnType<typeof readRl>>,
@@ -92,11 +68,11 @@ export function readSecret(
 
     const onData = (chunk: Buffer | string) => {
       for (const character of chunk.toString()) {
-        if (character === '\u0003') {
+        if (character === '') {
           finish(new Error('Input cancelled'))
           return
         }
-        if (character === '\u0004') {
+        if (character === '') {
           finish(new Error('Input ended'))
           return
         }
@@ -104,11 +80,11 @@ export function readSecret(
           finish()
           return
         }
-        if (character === '\u007f' || character === '\b') {
+        if (character === '' || character === '\b') {
           value = value.slice(0, -1)
           continue
         }
-        if (character === '\u0015') {
+        if (character === '') {
           value = ''
           continue
         }
@@ -145,17 +121,11 @@ export interface LoginOpts {
   token?: string
   username?: string
   password?: string
-  skipHookPrompt?: boolean
 }
 
-/**
- * The main login flow. Idempotent: re-running with the same
- * credentials overwrites the saved config.
- */
 export async function login(opts: LoginOpts = {}): Promise<void> {
   registerExitFlush()
 
-  // Direct token path: --server + --token skips the password flow entirely.
   if (opts.token) {
     const serverUrl = (opts.serverUrl ?? process.env.BASELINE_CLOUD_URL ?? '').replace(/\/+$/, '')
     if (!serverUrl) {
@@ -235,7 +205,6 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
     exit(1)
   }
 
-  // Try login first.
   let raw: string | null = null
   let user: LoginResponse['user'] | null = null
   let warning: string | undefined
@@ -251,11 +220,9 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
   } else if (loginRes.status === 401) {
     const body401 = loginRes.json as { reason?: string } | null
     if (body401?.reason !== 'not_found') {
-      // User exists but password is wrong (or account disabled).
       logger.error('Invalid username or password.')
       exit(1)
     }
-    // User does not exist — auto-register.
     const signupRes = await postJson<LoginResponse>(`${serverUrl}/api/v1/auth/signup`, {
       username,
       password,
@@ -280,9 +247,8 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
   }
 
   if (!raw) {
-    const hint = 'Ask your admin to issue a token from Dashboard → Admin → Tokens'
     logger.warn(`✓ Logged in as ${user.username}, but no bearer token is available.`)
-    logger.warn(hint)
+    logger.warn('Ask your admin to issue a token from Dashboard → Admin → Tokens')
     logger.warn('Then run: baseline-cloud cloud login --server <url> --token <raw-token>')
     exit(0)
   }
@@ -294,40 +260,17 @@ export async function login(opts: LoginOpts = {}): Promise<void> {
   logger.info(`  Config saved to ~/.baseline/cloud.json`)
   if (warning) logger.warn(warning)
 
-  // Fire cli.login event
   track({
     event_type: 'cli.login',
     project: 'default',
     payload: { serverUrl, via: 'interactive' },
   })
 
-  // Fire cli.install (first-time metrics) with current env context
   track({
     event_type: 'cli.install',
     project: 'default',
     payload: { ...envContext(), toolsDetected: detectTools(), viaLogin: true },
   })
-
-  // Offer to install the post-commit hook (only if we're inside a git
-  // repo and not already installed).
-  if (!opts.skipHookPrompt && isInsideGitRepo() && !isHookInstalled()) {
-    const rl = await readRl()
-    try {
-      const ans = (
-        await rl.question('Install post-commit git hook for automatic commit tracking? [Y/n] ')
-      )
-        .trim()
-        .toLowerCase()
-      if (ans === '' || ans === 'y' || ans === 'yes') {
-        const r = installHook()
-        if (r.installed) {
-          logger.success(`✓ ${r.message}`)
-        }
-      }
-    } finally {
-      rl.close()
-    }
-  }
 
   await flush()
 }
