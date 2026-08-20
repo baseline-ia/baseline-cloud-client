@@ -253,6 +253,83 @@ const REASONING_MODEL_OPTIONS = [
   { label: 'auto                  (Kiro selects automatically)',           value: 'auto'          },
 ] as const
 
+// ---------- Kiro live model fetching ----------
+
+interface KiroModel {
+  id: string
+  name: string
+  multiplier?: string
+  status?: string
+}
+
+const EXCLUDED_SECTION_IDS = new Set([
+  'how-models-behave-differently',
+  'model-lifecycle',
+  'gpt-56-openai',
+  'claude-opus-anthropic',
+  'claude-sonnet-anthropic',
+  'open-weight-models-deepseek-minimax-glm-qwen',
+  'auto-recommended',
+])
+
+function displayNameToModelId(name: string): string {
+  return name
+    .replace(/\s*\([^)]*\)/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9.-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+async function fetchKiroModels(): Promise<KiroModel[]> {
+  try {
+    const res = await fetch('https://kiro.dev/docs/models/available-models/', {
+      headers: { 'User-Agent': 'baseline-cloud-client/setup' },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return []
+    const html = await res.text()
+
+    // Extract model status from the lifecycle table
+    const statusMap = new Map<string, string>()
+    const tableRowRe = /<td>([^<]+)<\/td><td>[^<]*<\/td><td>(Active|Experimental)<\/td>/g
+    let tr: RegExpExecArray | null
+    while ((tr = tableRowRe.exec(html)) !== null) {
+      if (tr[1] && tr[2]) statusMap.set(tr[1].trim(), tr[2].trim())
+    }
+
+    // Split HTML into sections by h2
+    const sectionRe = /<h2 id="([^"]+)">([^<]+)<\/h2>([\s\S]*?)(?=<h2 |$)/g
+    const models: KiroModel[] = []
+    let m: RegExpExecArray | null
+    while ((m = sectionRe.exec(html)) !== null) {
+      const anchorId = (m[1] ?? '').trim()
+      const displayName = (m[2] ?? '').trim()
+      const content = m[3] ?? ''
+
+      if (!anchorId || !displayName) continue
+      if (EXCLUDED_SECTION_IDS.has(anchorId)) continue
+
+      const id = displayNameToModelId(displayName)
+      if (!id) continue
+
+      // Extract credit multiplier from section content
+      const text = content.replace(/<[^>]+>/g, ' ')
+      const multMatch = /(\d+(?:\.\d+)?)x\s*(?:Kiro\s*)?credit/i.exec(text)
+      const multiplier = multMatch ? `${multMatch[1]}x` : undefined
+      const status = statusMap.get(displayName)
+
+      models.push({ id, name: displayName, multiplier, status })
+    }
+
+    return models
+  } catch {
+    return []
+  }
+}
+
 const AGENT_SKILLS = [
   {
     slug: 'conflict-resolver',
@@ -283,18 +360,37 @@ function buildAgentContent(slug: string, name: string, description: string, mode
   ].join('\n')
 }
 
-async function promptReasoningModel(): Promise<string> {
+async function promptReasoningModel(models?: KiroModel[]): Promise<string> {
   return new Promise((resolve) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout })
     process.stdout.write('\n  Select model for reasoning-heavy tasks (security audit, conflict resolution):\n')
-    REASONING_MODEL_OPTIONS.forEach((opt, i) => {
+
+    const options: Array<{ label: string; value: string }> = []
+
+    if (models && models.length > 0) {
+      for (const m of models) {
+        const meta: string[] = []
+        if (m.multiplier) meta.push(`${m.multiplier} credits`)
+        if (m.status) meta.push(m.status)
+        const suffix = meta.length > 0 ? `  (${meta.join(', ')})` : ''
+        options.push({ label: `${m.name}${suffix}`, value: m.id })
+      }
+      options.push({ label: 'auto  (Kiro selects automatically)', value: 'auto' })
+    } else {
+      for (const opt of REASONING_MODEL_OPTIONS) {
+        options.push({ label: opt.label, value: opt.value })
+      }
+    }
+
+    options.forEach((opt, i) => {
       process.stdout.write(`    ${i + 1}) ${opt.label}\n`)
     })
-    rl.question('\n  Enter choice [1-5] (default: 1): ', (answer) => {
+
+    rl.question(`\n  Enter choice [1-${options.length}] (default: 1): `, (answer) => {
       rl.close()
       const idx = parseInt(answer.trim(), 10) - 1
-      const chosen = REASONING_MODEL_OPTIONS[idx]
-      resolve(chosen ? chosen.value : REASONING_MODEL_OPTIONS[0].value)
+      const chosen = options[idx]
+      resolve(chosen ? chosen.value : (options[0]?.value ?? 'auto'))
     })
   })
 }
@@ -313,7 +409,14 @@ async function setupKiroModelAgents(): Promise<void> {
       model = existing.reasoningModel ?? REASONING_MODEL_OPTIONS[0].value
       logger.dim(`  · Model preference already set: ${model}`)
     } catch {
-      model = await promptReasoningModel()
+      logger.dim('  · Fetching current model list from kiro.dev...')
+      const fetchedModels = await fetchKiroModels()
+      if (fetchedModels.length > 0) {
+        logger.success(`  ✓ Fetched ${fetchedModels.length} models from kiro.dev`)
+      } else {
+        logger.dim('  · Using built-in model list (kiro.dev unreachable)')
+      }
+      model = await promptReasoningModel(fetchedModels.length > 0 ? fetchedModels : undefined)
       writeFileSync(
         KIRO_BASELINE_CONFIG,
         JSON.stringify({ reasoningModel: model, version: 1, updatedAt: new Date().toISOString() }, null, 2) + '\n',
@@ -322,7 +425,14 @@ async function setupKiroModelAgents(): Promise<void> {
       logger.success(`  ✓ Model preference saved: ~/.kiro/baseline-config.json`)
     }
   } else {
-    model = await promptReasoningModel()
+    logger.dim('  · Fetching current model list from kiro.dev...')
+    const fetchedModels = await fetchKiroModels()
+    if (fetchedModels.length > 0) {
+      logger.success(`  ✓ Fetched ${fetchedModels.length} models from kiro.dev`)
+    } else {
+      logger.dim('  · Using built-in model list (kiro.dev unreachable)')
+    }
+    model = await promptReasoningModel(fetchedModels.length > 0 ? fetchedModels : undefined)
     writeFileSync(
       KIRO_BASELINE_CONFIG,
       JSON.stringify({ reasoningModel: model, version: 1, updatedAt: new Date().toISOString() }, null, 2) + '\n',
