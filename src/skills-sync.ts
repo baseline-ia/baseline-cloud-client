@@ -22,6 +22,7 @@ interface SyncResult {
   written: number
   removed: number
   skipped: number
+  cloudPolicy: string[]
   error?: string
 }
 
@@ -31,12 +32,13 @@ export async function syncSkills(opts: {
 } = {}): Promise<SyncResult> {
   const cfg = loadConfig()
   if (!cfg) {
-    return { written: 0, removed: 0, skipped: 0, error: 'Not authenticated — run: baseline-cloud cloud login' }
+    return { written: 0, removed: 0, skipped: 0, cloudPolicy: [], error: 'Not authenticated — run: baseline-cloud cloud login' }
   }
 
   const project = resolveProjectIdentity(opts.project)
 
   let skills: SkillRow[]
+  let cloudPolicy: string[] = []
   try {
     const res = await fetch(`${cfg.server_url}/api/v1/skills?project=${encodeURIComponent(project)}`, {
       headers: { Authorization: `Bearer ${cfg.token}` },
@@ -44,16 +46,17 @@ export async function syncSkills(opts: {
     if (!res.ok) {
       const body = await res.json().catch(() => ({})) as Record<string, unknown>
       const code = (body as any).error_code ?? res.status
-      return { written: 0, removed: 0, skipped: 0, error: `Server returned ${res.status} (${code})` }
+      return { written: 0, removed: 0, skipped: 0, cloudPolicy: [], error: `Server returned ${res.status} (${code})` }
     }
-    const data = await res.json() as { ok: boolean; skills: SkillRow[] }
+    const data = await res.json() as { ok: boolean; skills: SkillRow[]; policy?: { skills?: { disabled?: string[] } } }
     skills = data.skills ?? []
+    cloudPolicy = data.policy?.skills?.disabled ?? []
   } catch (err) {
-    return { written: 0, removed: 0, skipped: 0, error: `Network error: ${err instanceof Error ? err.message : String(err)}` }
+    return { written: 0, removed: 0, skipped: 0, cloudPolicy: [], error: `Network error: ${err instanceof Error ? err.message : String(err)}` }
   }
 
   if (!existsSync(KIRO_STEERING_DIR)) {
-    return { written: 0, removed: 0, skipped: 0, error: `~/.kiro/steering not found — is Kiro installed?` }
+    return { written: 0, removed: 0, skipped: 0, cloudPolicy, error: `~/.kiro/steering not found — is Kiro installed?` }
   }
 
   // Track which files we write so we can remove stale ones.
@@ -79,5 +82,5 @@ export async function syncSkills(opts: {
     if (opts.verbose) logger.dim(`  ✗ removed stale: ${f}`)
   }
 
-  return { written: writeCount, removed: stale.length, skipped: skipCount }
+  return { written: writeCount, removed: stale.length, skipped: skipCount, cloudPolicy }
 }

@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { track, flush } from '../telemetry'
 import { logger } from '../logger'
 import { resolveProjectIdentity } from '../project-identity'
+import { syncSkills } from '../skills-sync'
+import { syncRepoPolicyForWorkspace } from '../repo-policy'
 
 const KIRO_SESSIONS_DIR = join(homedir(), '.kiro', 'sessions')
 const KIRO_CLI_DIR = join(KIRO_SESSIONS_DIR, 'cli')
@@ -129,11 +131,12 @@ function cliSessionLifecycle(lastEventStatus: 'success' | 'aborted' | null): Lif
   return 'started'
 }
 
-async function scanIde(state: ScanState, dryRun: boolean): Promise<{ sessions: number; credits: number }> {
-  if (!existsSync(KIRO_SESSIONS_DIR)) return { sessions: 0, credits: 0 }
+async function scanIde(state: ScanState, dryRun: boolean): Promise<{ sessions: number; credits: number; workspaceDirs: Map<string, string> }> {
+  if (!existsSync(KIRO_SESSIONS_DIR)) return { sessions: 0, credits: 0, workspaceDirs: new Map() }
 
   let newSessions = 0
   let totalCredits = 0
+  const workspaceDirs = new Map<string, string>() // project slug → workspace dir
 
   const workspaceIds = readdirSync(KIRO_SESSIONS_DIR).filter(
     (f) => f !== 'cli' && statSync(join(KIRO_SESSIONS_DIR, f)).isDirectory()
@@ -201,10 +204,14 @@ async function scanIde(state: ScanState, dryRun: boolean): Promise<{ sessions: n
         newSessions++
         totalCredits += credits
       }
+
+      if (meta?.workspaceDir) {
+        workspaceDirs.set(project, meta.workspaceDir)
+      }
     }
   }
 
-  return { sessions: newSessions, credits: totalCredits }
+  return { sessions: newSessions, credits: totalCredits, workspaceDirs }
 }
 
 async function scanCli(state: ScanState, dryRun: boolean): Promise<{ sessions: number; credits: number }> {
@@ -305,5 +312,21 @@ export async function kiroScan(opts: { dryRun?: boolean } = {}): Promise<void> {
     logger.success(
       `✓ Tracked ${newSessions} session${newSessions !== 1 ? 's' : ''} (${(Math.round(totalCredits * 1000) / 1000).toLocaleString()} credits total)`
     )
+  }
+
+  if (!dryRun && ide.workspaceDirs.size > 0) {
+    await syncPolicyForWorkspaces(ide.workspaceDirs)
+  }
+}
+
+async function syncPolicyForWorkspaces(workspaceDirs: Map<string, string>): Promise<void> {
+  try {
+    const result = await syncSkills()
+    if (result.error) return
+    for (const [project, wsDir] of workspaceDirs) {
+      syncRepoPolicyForWorkspace(wsDir, result.cloudPolicy, project)
+    }
+  } catch {
+    // policy sync is best-effort, never block kiro scan
   }
 }

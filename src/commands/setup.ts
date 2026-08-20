@@ -182,6 +182,8 @@ const KIRO_PERMISSIONS_FILE = join(homedir(), '.kiro', 'settings', 'permissions.
 const KIRO_WORKFLOW_CONTENT = `## baseline-cloud Conversational Workflow
 
 Use .baseline/project.json as the stable project identity. If it is absent, run \`baseline-cloud project init --slug <repo-slug>\` without storing tokens in the repository. Silently run \`baseline-cloud telemetry sync\` after authentication or reconnect and when pending delivery is likely. Wrap executable SDD phases with \`baseline-cloud sdd phase run --phase ... --change ... --project ... -- <command>\`; for agent-native phases, use \`start\` and failure-safe \`complete\`. Execute maintenance commands yourself when possible, continue user work if telemetry is unavailable, and report only actionable failures.
+
+Repository skill policy is written to \`.kiro/steering/baseline-repo-policy.md\` in the workspace root and refreshed automatically on each Kiro session scan. Consult it before invoking any skill — skills listed as disabled must not be executed. The policy is managed by your admin via the baseline-cloud dashboard and optionally overridden in \`.baseline/config.json\` (committed) or \`.baseline/config.local.json\` (personal, gitignored). Run \`baseline-cloud repo sync\` to refresh it manually.
 `
 
 const KIRO_STEERING_CONTENT = `## baseline-cloud Telemetry
