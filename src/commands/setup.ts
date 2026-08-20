@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createInterface } from 'node:readline'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { logger } from '../logger'
@@ -239,6 +240,105 @@ function setupKiroSteering(): boolean {
   return true
 }
 
+// ---------- Kiro model agent setup ----------
+
+const KIRO_AGENTS_DIR = join(homedir(), '.kiro', 'agents')
+const KIRO_BASELINE_CONFIG = join(homedir(), '.kiro', 'baseline-config.json')
+
+const REASONING_MODEL_OPTIONS = [
+  { label: 'Claude Opus 5         (top-tier, 1M context, 2.2x credits)', value: 'claude-opus-5' },
+  { label: 'GPT 5.6 Sol           (top-tier, OpenAI)',                    value: 'gpt-5.6-sol'   },
+  { label: 'Claude Opus 4.8       (powerful, lower cost)',                value: 'claude-opus-4.8' },
+  { label: 'Claude Opus 4.7',                                             value: 'claude-opus-4.7' },
+  { label: 'auto                  (Kiro selects automatically)',           value: 'auto'          },
+] as const
+
+const AGENT_SKILLS = [
+  {
+    slug: 'conflict-resolver',
+    name: 'conflict-resolver',
+    description: 'Analyze and resolve git merge conflicts using deep reasoning.',
+  },
+  {
+    slug: 'sdd-security',
+    name: 'sdd-security',
+    description: 'OWASP Top 10 security audit integrated into the SDD workflow.',
+  },
+] as const
+
+function buildAgentContent(slug: string, name: string, description: string, model: string): string {
+  return [
+    '---',
+    `name: ${name}`,
+    `description: ${description}`,
+    `model: ${model}`,
+    'tools: ["@builtin"]',
+    '---',
+    '',
+    `You are the **${name}** agent. Load and follow the skill instructions from:`,
+    `\`~/.kiro/steering/bl-${slug}.md\``,
+    '',
+    'Execute all steps in that file exactly as written.',
+    '',
+  ].join('\n')
+}
+
+async function promptReasoningModel(): Promise<string> {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout })
+    process.stdout.write('\n  Select model for reasoning-heavy tasks (security audit, conflict resolution):\n')
+    REASONING_MODEL_OPTIONS.forEach((opt, i) => {
+      process.stdout.write(`    ${i + 1}) ${opt.label}\n`)
+    })
+    rl.question('\n  Enter choice [1-5] (default: 1): ', (answer) => {
+      rl.close()
+      const idx = parseInt(answer.trim(), 10) - 1
+      const chosen = REASONING_MODEL_OPTIONS[idx]
+      resolve(chosen ? chosen.value : REASONING_MODEL_OPTIONS[0].value)
+    })
+  })
+}
+
+async function setupKiroModelAgents(): Promise<void> {
+  if (!existsSync(KIRO_AGENTS_DIR)) {
+    logger.warn('  ~/.kiro/agents not found — skipping model agent configuration')
+    return
+  }
+
+  let model: string
+
+  if (existsSync(KIRO_BASELINE_CONFIG)) {
+    try {
+      const existing = JSON.parse(readFileSync(KIRO_BASELINE_CONFIG, 'utf8')) as { reasoningModel?: string }
+      model = existing.reasoningModel ?? REASONING_MODEL_OPTIONS[0].value
+      logger.dim(`  · Model preference already set: ${model}`)
+    } catch {
+      model = await promptReasoningModel()
+      writeFileSync(
+        KIRO_BASELINE_CONFIG,
+        JSON.stringify({ reasoningModel: model, version: 1, updatedAt: new Date().toISOString() }, null, 2) + '\n',
+        'utf8',
+      )
+      logger.success(`  ✓ Model preference saved: ~/.kiro/baseline-config.json`)
+    }
+  } else {
+    model = await promptReasoningModel()
+    writeFileSync(
+      KIRO_BASELINE_CONFIG,
+      JSON.stringify({ reasoningModel: model, version: 1, updatedAt: new Date().toISOString() }, null, 2) + '\n',
+      'utf8',
+    )
+    logger.success(`  ✓ Model preference saved: ~/.kiro/baseline-config.json`)
+  }
+
+  for (const skill of AGENT_SKILLS) {
+    const agentFile = join(KIRO_AGENTS_DIR, `bl-${skill.slug}.md`)
+    const alreadyExists = existsSync(agentFile)
+    writeFileSync(agentFile, buildAgentContent(skill.slug, skill.name, skill.description, model), 'utf8')
+    logger.success(`  ✓ Agent ${alreadyExists ? 'updated' : 'created'}: ~/.kiro/agents/bl-${skill.slug}.md (model: ${model})`)
+  }
+}
+
 // ---------- CommandCode hook setup ----------
 // CommandCode uses the same hook system as Claude Code:
 // events: PreToolUse, PostToolUse, Stop, SessionStart
@@ -309,6 +409,7 @@ export async function setup(): Promise<void> {
       } else if ((tool.id === 'kiro' || tool.id === 'kiro-cli') && !kiroConfigured) {
         logger.title('Kiro')
         status.configuredHooks = setupKiroSteering()
+        await setupKiroModelAgents()
         installKiroWatcher()
         kiroConfigured = true
       } else if ((tool.id === 'kiro' || tool.id === 'kiro-cli') && kiroConfigured) {
